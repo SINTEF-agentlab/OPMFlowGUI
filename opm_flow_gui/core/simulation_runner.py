@@ -291,12 +291,27 @@ _RE_REPORT_STEP = re.compile(
     r"Report\s+step\s+(\d+)",
     re.IGNORECASE,
 )
+# Matches "Report step N of M" or "Report step N/M"
+_RE_REPORT_STEP_OF = re.compile(
+    r"Report\s+step\s+(\d+)\s*(?:of|/)\s*(\d+)",
+    re.IGNORECASE,
+)
 _RE_TIME_STEP = re.compile(
     r"Time\s+step\s+\d+.*?at.*?day\s+([\d.eE+\-]+)",
     re.IGNORECASE,
 )
+# Also matches "Time: X days" or "Current time X days"
+_RE_CURRENT_DAY = re.compile(
+    r"(?:current\s+)?time[:\s]+(?:=\s*)?([\d.eE+\-]+)\s*days?",
+    re.IGNORECASE,
+)
 _RE_TOTAL_TIME = re.compile(
     r"Simulation\s+(?:total\s+)?time.*?(\d[\d.eE+\-]*)\s*days",
+    re.IGNORECASE,
+)
+# Total steps from "N report steps" or "N time steps"
+_RE_TOTAL_STEPS = re.compile(
+    r"(\d+)\s+report\s+steps",
     re.IGNORECASE,
 )
 
@@ -323,6 +338,7 @@ class SimulationRunner(QObject):
         self._mpirun_binary = mpirun_binary
         self._processes: dict[str, QProcess] = {}
         self._total_time: dict[str, float] = {}
+        self._total_steps: dict[str, int] = {}
 
     # -- public API ---------------------------------------------------------
 
@@ -355,6 +371,7 @@ class SimulationRunner(QObject):
 
         self._processes[run_id] = process
         self._total_time.pop(run_id, None)
+        self._total_steps.pop(run_id, None)
 
         process.start(program, arguments)
         if not process.waitForStarted(5000):
@@ -401,35 +418,62 @@ class SimulationRunner(QObject):
                     except ValueError:
                         pass
 
-            # Estimate progress from current simulation day
-            total = self._total_time.get(run_id)
-            if total and total > 0:
-                ts_match = _RE_TIME_STEP.search(line)
-                if ts_match:
+            # Try to detect total number of report steps once
+            if run_id not in self._total_steps:
+                match = _RE_TOTAL_STEPS.search(line)
+                if match:
                     try:
-                        current_day = float(ts_match.group(1))
-                        progress = min(current_day / total * 100.0, 100.0)
-                        self.progress_updated.emit(run_id, progress)
+                        self._total_steps[run_id] = int(match.group(1))
                     except ValueError:
                         pass
 
-            # Fallback: emit report-step-based progress (no total known)
-            if run_id not in self._total_time:
-                rs_match = _RE_REPORT_STEP.search(line)
-                if rs_match:
-                    try:
-                        step = int(rs_match.group(1))
-                        # Without total time we report step number as a hint;
-                        # cap at 99 so 100 is only sent on completion.
-                        progress = min(float(step), 99.0)
+            # Best case: "Report step N of M" gives exact percentage
+            of_match = _RE_REPORT_STEP_OF.search(line)
+            if of_match:
+                try:
+                    current = int(of_match.group(1))
+                    total = int(of_match.group(2))
+                    if total > 0:
+                        progress = min(current / total * 100.0, 99.0)
                         self.progress_updated.emit(run_id, progress)
+                        continue
+                except ValueError:
+                    pass
+
+            # Estimate progress from current simulation day vs total time
+            total_days = self._total_time.get(run_id)
+            if total_days and total_days > 0:
+                ts_match = _RE_TIME_STEP.search(line) or _RE_CURRENT_DAY.search(line)
+                if ts_match:
+                    try:
+                        current_day = float(ts_match.group(1))
+                        progress = min(current_day / total_days * 100.0, 99.0)
+                        self.progress_updated.emit(run_id, progress)
+                        continue
                     except ValueError:
                         pass
+
+            # Use report step number vs known total steps
+            total_steps = self._total_steps.get(run_id)
+            rs_match = _RE_REPORT_STEP.search(line)
+            if rs_match:
+                try:
+                    step = int(rs_match.group(1))
+                    if total_steps and total_steps > 0:
+                        progress = min(step / total_steps * 100.0, 99.0)
+                    else:
+                        # No total known: use step as an indeterminate hint,
+                        # capped so 100 is reserved for actual completion.
+                        progress = min(float(step), 99.0)
+                    self.progress_updated.emit(run_id, progress)
+                except ValueError:
+                    pass
 
     def _on_process_finished(self, run_id: str, exit_code: int) -> None:
         """Handle subprocess completion."""
         self._processes.pop(run_id, None)
         self._total_time.pop(run_id, None)
+        self._total_steps.pop(run_id, None)
 
         status = "completed" if exit_code == 0 else "failed"
         if status == "completed":

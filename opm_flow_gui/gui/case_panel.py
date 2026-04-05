@@ -2,14 +2,16 @@
 
 Displays each case with its name, directory path and a run-count badge.
 Provides controls for adding individual files, scanning folders and removing
-cases, as well as a live filter field.
+cases, as well as a live filter field.  Double-clicking a case opens its
+directory in the system file manager.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QResizeEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -35,6 +37,29 @@ from opm_flow_gui.gui.styles import (
 )
 
 
+class _ElidingLabel(QLabel):
+    """QLabel that automatically elides its text when resized."""
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._full_text = text
+        super().setText(text)
+
+    def setText(self, text: str) -> None:  # type: ignore[override]
+        self._full_text = text
+        self._update_elided()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._update_elided()
+
+    def _update_elided(self) -> None:
+        fm = self.fontMetrics()
+        available = max(self.width() - 4, 1)
+        elided = fm.elidedText(self._full_text, Qt.TextElideMode.ElideMiddle, available)
+        super().setText(elided)
+
+
 class _CaseItemWidget(QWidget):
     """Custom widget rendered for each case row in the list."""
 
@@ -53,17 +78,12 @@ class _CaseItemWidget(QWidget):
         )
         left.addWidget(name_label)
 
-        path_label = QLabel(case.directory)
+        path_label = _ElidingLabel(case.directory)
         path_label.setStyleSheet(
             f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;"
         )
         path_label.setToolTip(case.directory)
-        # Elide long paths
-        path_label.setMaximumWidth(220)
-        path_label.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
-        fm = path_label.fontMetrics()
-        elided = fm.elidedText(case.directory, Qt.TextElideMode.ElideMiddle, 220)
-        path_label.setText(elided)
+        path_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         left.addWidget(path_label)
 
         # ---- right column: run-count badge ----
@@ -99,6 +119,7 @@ class CasePanel(QWidget):
     ) -> None:
         super().__init__(parent)
         self._case_manager = case_manager
+        self.setMinimumWidth(180)
         self._setup_ui()
         self._connect_signals()
         self.refresh()
@@ -135,16 +156,25 @@ class CasePanel(QWidget):
         toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
         tb_layout = QHBoxLayout(toolbar)
         tb_layout.setContentsMargins(8, 4, 8, 4)
-        tb_layout.setSpacing(6)
+        tb_layout.setSpacing(4)
 
-        self._btn_add = self._make_button("Add File")
-        self._btn_scan = self._make_button("Scan Folder")
+        self._btn_add = self._make_button("Add")
+        self._btn_add.setToolTip("Add a .DATA case file")
+        self._btn_scan = self._make_button("Scan")
+        self._btn_scan.setToolTip("Scan a folder for .DATA files")
         self._btn_remove = self._make_button("Remove")
+        self._btn_remove.setToolTip("Remove selected case from the list")
 
         tb_layout.addWidget(self._btn_add)
         tb_layout.addWidget(self._btn_scan)
         tb_layout.addWidget(self._btn_remove)
         tb_layout.addStretch()
+
+        hint = QLabel("Double-click to open folder")
+        hint.setStyleSheet(
+            f"font-size: 10px; color: {TEXT_MUTED}; background: transparent;"
+        )
+        tb_layout.addWidget(hint)
 
         layout.addWidget(toolbar)
 
@@ -164,8 +194,9 @@ class CasePanel(QWidget):
     def _make_button(text: str) -> QPushButton:
         btn = QPushButton(text)
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         btn.setStyleSheet(
-            f"QPushButton {{ padding: 4px 12px; border-radius: 4px;"
+            f"QPushButton {{ padding: 4px 8px; border-radius: 4px;"
             f" background-color: {BG_TERTIARY}; color: {TEXT_SECONDARY};"
             f" border: 1px solid {BORDER}; font-size: 12px; }}"
             f" QPushButton:hover {{ background-color: {ACCENT};"
@@ -181,6 +212,7 @@ class CasePanel(QWidget):
         self._btn_scan.clicked.connect(self._scan_folder)
         self._btn_remove.clicked.connect(self._remove_selected)
         self._list.currentItemChanged.connect(self._on_selection_changed)
+        self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._filter_edit.textChanged.connect(self._filter_cases)
 
     # ------------------------------------------------------------------
@@ -257,6 +289,12 @@ class CasePanel(QWidget):
         if item is not None:
             data_path: str = item.data(Qt.ItemDataRole.UserRole)
             self.case_selected.emit(data_path)
+
+    def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
+        """Open the case's directory in the system file manager."""
+        data_path: str = item.data(Qt.ItemDataRole.UserRole)
+        directory = str(Path(data_path).parent)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(directory))
 
     def _filter_cases(self, text: str) -> None:
         """Show only items whose case name contains *text* (case-insensitive)."""

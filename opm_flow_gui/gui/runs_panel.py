@@ -1,8 +1,8 @@
 """Middle panel displaying simulation runs for the currently selected case.
 
 Shows each run as a card-like widget with run ID, status, progress bar,
-MPI process count and a delete button.  Provides a "New Run" button for
-launching additional simulations.
+MPI process count, notes and delete/notes buttons.  Provides a "New Run"
+button for launching additional simulations.
 """
 
 from __future__ import annotations
@@ -12,9 +12,11 @@ from datetime import datetime, timezone
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QMessageBox,
     QProgressBar,
     QPushButton,
     QSizePolicy,
@@ -75,7 +77,8 @@ def _format_elapsed(started_at: str, finished_at: str | None = None) -> str:
 class RunItemWidget(QWidget):
     """Card-like widget representing a single simulation run."""
 
-    delete_clicked = Signal(str)
+    delete_clicked = Signal(str)   # run_id
+    notes_saved = Signal(str)      # run_id (notes already written to run object)
 
     def __init__(self, run: SimulationRun, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -87,7 +90,7 @@ class RunItemWidget(QWidget):
         card.setContentsMargins(10, 8, 10, 8)
         card.setSpacing(4)
 
-        # ---- row 1: run id + date + delete button ----
+        # ---- row 1: run id + date + action buttons ----
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
 
@@ -109,6 +112,21 @@ class RunItemWidget(QWidget):
         top_row.addWidget(date_label)
 
         top_row.addStretch()
+
+        self._btn_notes = QPushButton("\U0001f4dd")
+        self._btn_notes.setToolTip("Add/edit notes for this run")
+        self._btn_notes.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_notes.setFixedHeight(22)
+        self._btn_notes.setFixedWidth(28)
+        self._btn_notes.setStyleSheet(
+            f"QPushButton {{ padding: 2px 4px; border-radius: 3px;"
+            f" background-color: transparent; color: {TEXT_MUTED};"
+            f" border: 1px solid {BORDER}; font-size: 13px; }}"
+            f" QPushButton:hover {{ background-color: {BG_TERTIARY};"
+            f" color: {TEXT_PRIMARY}; }}"
+        )
+        self._btn_notes.clicked.connect(self._edit_notes)
+        top_row.addWidget(self._btn_notes)
 
         self._btn_delete = QPushButton("Delete")
         self._btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -148,7 +166,17 @@ class RunItemWidget(QWidget):
         info_row.addStretch()
         card.addLayout(info_row)
 
-        # ---- row 3: progress bar ----
+        # ---- row 3: notes preview ----
+        self._notes_label = QLabel(run.notes if run.notes else "")
+        self._notes_label.setStyleSheet(
+            f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;"
+            " font-style: italic;"
+        )
+        self._notes_label.setWordWrap(True)
+        self._notes_label.setVisible(bool(run.notes))
+        card.addWidget(self._notes_label)
+
+        # ---- row 4: progress bar ----
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 100)
         self._progress_bar.setValue(int(run.progress))
@@ -156,7 +184,8 @@ class RunItemWidget(QWidget):
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setStyleSheet(
             f"QProgressBar {{ background-color: {BG_TERTIARY};"
-            f" border: none; border-radius: 3px; }}"
+            f" border: none; border-radius: 3px;"
+            f" min-height: 6px; max-height: 6px; }}"
             f" QProgressBar::chunk {{ background-color: {ACCENT};"
             f" border-radius: 3px; }}"
         )
@@ -199,6 +228,21 @@ class RunItemWidget(QWidget):
 
     # -- internal --
 
+    def _edit_notes(self) -> None:
+        """Open a text input dialog to edit the run notes."""
+        new_notes, ok = QInputDialog.getMultiLineText(
+            self,
+            "Run Notes",
+            f"Notes for run {self._run_id[:8]}:",
+            self._run.notes,
+        )
+        if ok:
+            self._run.notes = new_notes
+            self._notes_label.setText(new_notes)
+            self._notes_label.setVisible(bool(new_notes))
+            self.notes_saved.emit(self._run_id)
+            self._refresh_tooltip()
+
     def _refresh_tooltip(self) -> None:
         """Build and set a rich HTML tooltip summarising the run."""
         run = self._run
@@ -231,6 +275,9 @@ class RunItemWidget(QWidget):
             opts = ", ".join(f"{k}={v}" for k, v in run.flow_options.items())
             lines.append(f"<b>Options:</b> {opts}")
 
+        if run.notes:
+            lines.append(f"<b>Notes:</b> {run.notes}")
+
         self.setToolTip("<br>".join(lines))
 
 
@@ -238,8 +285,9 @@ class RunsPanel(QWidget):
     """Middle panel that lists simulation runs for the selected case."""
 
     run_selected = Signal(str)
-    run_deleted = Signal(str, str)
+    run_deleted = Signal(str, str, bool)   # (case_path, run_id, delete_from_disk)
     new_run_requested = Signal()
+    notes_changed = Signal()               # notes updated; trigger a state save
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -373,9 +421,31 @@ class RunsPanel(QWidget):
             self.run_selected.emit(run_id)
 
     def _on_delete_clicked(self, run_id: str) -> None:
-        """Emit *run_deleted* with the case path and run id."""
-        if self._current_case is not None:
-            self.run_deleted.emit(self._current_case.data_file_path, run_id)
+        """Ask for confirmation then emit *run_deleted* with disk-delete flag."""
+        if self._current_case is None:
+            return
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Delete Run")
+        msg.setText(f"Delete run <b>{run_id[:8]}</b>?")
+        msg.setInformativeText(
+            "Choose whether to also remove the output files from disk."
+        )
+        btn_gui = msg.addButton("Remove from GUI only", QMessageBox.ButtonRole.AcceptRole)
+        btn_disk = msg.addButton("Remove from GUI + Disk", QMessageBox.ButtonRole.DestructiveRole)
+        msg.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        msg.setDefaultButton(btn_gui)
+        msg.exec()
+
+        clicked = msg.clickedButton()
+        if clicked is btn_gui:
+            self.run_deleted.emit(self._current_case.data_file_path, run_id, False)
+        elif clicked is btn_disk:
+            self.run_deleted.emit(self._current_case.data_file_path, run_id, True)
+
+    def _on_notes_saved(self, run_id: str) -> None:  # noqa: ARG002
+        """Forward notes-saved notification; notes already written to run object."""
+        self.notes_changed.emit()
 
     # ------------------------------------------------------------------
     # Widget factory
@@ -384,5 +454,6 @@ class RunsPanel(QWidget):
         """Create and register a :class:`RunItemWidget` for *run*."""
         widget = RunItemWidget(run, parent=self._list)
         widget.delete_clicked.connect(self._on_delete_clicked)
+        widget.notes_saved.connect(self._on_notes_saved)
         self._run_widgets[run.run_id] = widget
         return widget

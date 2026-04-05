@@ -103,6 +103,15 @@ class SettingsDialog(QDialog):
             self._browse_mpirun,
         )
 
+        # ResInsight binary
+        self._edit_resinsight = self._add_path_row(
+            layout,
+            "ResInsight Binary:",
+            self._config.resinsight_binary,
+            "Path to the ResInsight executable",
+            self._browse_resinsight,
+        )
+
         # Output base path
         self._edit_output = self._add_path_row(
             layout,
@@ -206,6 +215,7 @@ class SettingsDialog(QDialog):
         return Config(
             flow_binary=self._edit_flow.text().strip(),
             mpirun_binary=self._edit_mpirun.text().strip(),
+            resinsight_binary=self._edit_resinsight.text().strip(),
             output_base_path=self._edit_output.text().strip(),
             search_directories=dirs,
             case_files=list(self._config.case_files),
@@ -235,6 +245,17 @@ class SettingsDialog(QDialog):
         )
         if path:
             self._edit_mpirun.setText(path)
+
+    def _browse_resinsight(self) -> None:
+        """Open a native file picker for the ResInsight executable."""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select ResInsight Binary",
+            self._edit_resinsight.text(),
+            "All Files (*)",
+        )
+        if path:
+            self._edit_resinsight.setText(path)
 
     def _browse_output_path(self) -> None:
         """Open a native folder picker for the output base directory."""
