@@ -21,23 +21,19 @@ class RunStatus(Enum):
 
 @dataclass
 class SimulationRun:
-    run_id: str
     case_path: str
     output_dir: str
+    run_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     status: RunStatus = RunStatus.PENDING
-    created_at: str = ""
+    created_at: str = field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
     started_at: str | None = None
     finished_at: str | None = None
     flow_options: dict[str, Any] = field(default_factory=dict)
     mpi_processes: int = 1
     progress: float = 0.0
     pid: int | None = None
-
-    def __post_init__(self) -> None:
-        if not self.run_id:
-            self.run_id = str(uuid.uuid4())
-        if not self.created_at:
-            self.created_at = datetime.now(timezone.utc).isoformat()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -57,9 +53,9 @@ class SimulationRun:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SimulationRun:
         return cls(
-            run_id=data.get("run_id", ""),
             case_path=data.get("case_path", ""),
             output_dir=data.get("output_dir", ""),
+            run_id=data.get("run_id", str(uuid.uuid4())),
             status=RunStatus(data.get("status", "pending")),
             created_at=data.get("created_at", ""),
             started_at=data.get("started_at"),
