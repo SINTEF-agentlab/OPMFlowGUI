@@ -1,13 +1,16 @@
 """Right-hand panel displaying summary plot data from completed simulation runs.
 
-Provides a filterable tree of categorised summary vectors on the left and a
-matplotlib plot canvas on the right.  Vectors are plotted against simulation
-dates and styled to match the application dark theme.
+Contains two tabs:
+- **Summary**: filterable tree of summary vectors + matplotlib plot canvas.
+- **Log Files**: scrollable PRT/DBG viewer with search and step navigation.
+
+A "Launch ResInsight" button is available in the Summary tab toolbar.
 """
 
 from __future__ import annotations
 
 import logging
+import subprocess
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -19,6 +22,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSplitter,
+    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -33,6 +37,7 @@ from PySide6.QtGui import QBrush, QColor
 
 from opm_flow_gui.core.case_manager import SimulationRun
 from opm_flow_gui.core.summary_reader import SummaryReader
+from opm_flow_gui.gui.log_viewer import LogViewerPanel
 from opm_flow_gui.gui.styles import (
     ACCENT,
     ACCENT_HOVER,
@@ -66,13 +71,14 @@ _PLOT_COLORS: list[str] = [
 
 
 class SummaryPanel(QWidget):
-    """Right panel showing summary results for a completed simulation run."""
+    """Right panel showing summary results and log files for a completed run."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
         self._reader: SummaryReader | None = None
         self._current_run: SimulationRun | None = None
+        self._resinsight_binary: str = "ResInsight"
         self._legend_visible: bool = True
         self._plotted_keys: list[str] = []
         self._color_index: int = 0
@@ -80,6 +86,14 @@ class SummaryPanel(QWidget):
         self._setup_ui()
         self._connect_signals()
         self._show_empty_state()
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def set_resinsight_binary(self, path: str) -> None:
+        """Update the ResInsight executable path."""
+        self._resinsight_binary = path
 
     # ------------------------------------------------------------------
     # UI construction
@@ -91,18 +105,71 @@ class SummaryPanel(QWidget):
         root.setSpacing(0)
 
         # --- header ---
-        header = QLabel("Summary Results")
+        header = QLabel("Results")
         header.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {TEXT_PRIMARY};"
             f" padding: 12px 12px 8px 12px; background-color: {BG_SECONDARY};"
         )
         root.addWidget(header)
 
-        # --- main content area (splitter) ---
+        # --- tab widget ---
+        self._tabs = QTabWidget()
+        self._tabs.setStyleSheet(
+            f"QTabWidget::pane {{ background-color: {BG_PRIMARY}; border: none; }}"
+        )
+        self._tabs.addTab(self._build_summary_tab(), "Summary")
+        self._tabs.addTab(self._build_log_tab(), "Log Files")
+        root.addWidget(self._tabs, 1)
+
+        # --- empty-state overlay ---
+        self._empty_label = QLabel("Select a completed run to view results")
+        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 14px; background: transparent;"
+        )
+        root.addWidget(self._empty_label, 1)
+
+    def _build_summary_tab(self) -> QWidget:
+        """Build the summary plot tab."""
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # ---- toolbar ----
+        toolbar = QWidget()
+        toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
+        tb_layout = QHBoxLayout(toolbar)
+        tb_layout.setContentsMargins(8, 6, 8, 6)
+        tb_layout.setSpacing(8)
+
+        self._btn_clear = self._make_toolbar_button("Clear Plot")
+        self._btn_toggle_legend = self._make_toolbar_button("Toggle Legend")
+        self._chk_overlay = QCheckBox("Overlay multiple vectors")
+        self._chk_overlay.setStyleSheet(
+            f"QCheckBox {{ color: {TEXT_SECONDARY}; font-size: 12px;"
+            f" background: transparent; }}"
+        )
+        self._chk_overlay.setChecked(False)
+
+        self._btn_resinsight = self._make_toolbar_button("\U0001f5a5 Launch ResInsight")
+        self._btn_resinsight.setToolTip(
+            "Open the simulation output in ResInsight"
+        )
+        self._btn_resinsight.setEnabled(False)
+
+        tb_layout.addWidget(self._btn_clear)
+        tb_layout.addWidget(self._btn_toggle_legend)
+        tb_layout.addStretch()
+        tb_layout.addWidget(self._chk_overlay)
+        tb_layout.addWidget(self._btn_resinsight)
+
+        layout.addWidget(toolbar)
+
+        # ---- splitter: tree + canvas ----
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
         self._splitter.setHandleWidth(3)
 
-        # ---- left side: filter + tree ----
         left_pane = QWidget()
         left_layout = QVBoxLayout(left_pane)
         left_layout.setContentsMargins(0, 0, 0, 0)
@@ -133,36 +200,11 @@ class SummaryPanel(QWidget):
 
         self._splitter.addWidget(left_pane)
 
-        # ---- right side: toolbar + plot canvas ----
         right_pane = QWidget()
         right_layout = QVBoxLayout(right_pane)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
 
-        # toolbar
-        toolbar = QWidget()
-        toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
-        tb_layout = QHBoxLayout(toolbar)
-        tb_layout.setContentsMargins(8, 6, 8, 6)
-        tb_layout.setSpacing(8)
-
-        self._btn_clear = self._make_toolbar_button("Clear Plot")
-        self._btn_toggle_legend = self._make_toolbar_button("Toggle Legend")
-        self._chk_overlay = QCheckBox("Overlay multiple vectors")
-        self._chk_overlay.setStyleSheet(
-            f"QCheckBox {{ color: {TEXT_SECONDARY}; font-size: 12px;"
-            f" background: transparent; }}"
-        )
-        self._chk_overlay.setChecked(False)
-
-        tb_layout.addWidget(self._btn_clear)
-        tb_layout.addWidget(self._btn_toggle_legend)
-        tb_layout.addStretch()
-        tb_layout.addWidget(self._chk_overlay)
-
-        right_layout.addWidget(toolbar)
-
-        # matplotlib canvas
         self._figure = Figure(facecolor=BG_PRIMARY)
         self._canvas = FigureCanvasQTAgg(self._figure)
         self._canvas.setSizePolicy(
@@ -177,15 +219,13 @@ class SummaryPanel(QWidget):
         self._splitter.setStretchFactor(0, 1)
         self._splitter.setStretchFactor(1, 3)
 
-        root.addWidget(self._splitter, 1)
+        layout.addWidget(self._splitter, 1)
+        return tab
 
-        # --- empty-state overlay ---
-        self._empty_label = QLabel("Select a completed run to view results")
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 14px; background: transparent;"
-        )
-        root.addWidget(self._empty_label, 1)
+    def _build_log_tab(self) -> QWidget:
+        """Build the log file viewer tab."""
+        self._log_viewer = LogViewerPanel()
+        return self._log_viewer
 
     # ------------------------------------------------------------------
     # Helpers
@@ -201,6 +241,8 @@ class SummaryPanel(QWidget):
             f" border: 1px solid {BORDER}; font-size: 12px; }}"
             f" QPushButton:hover {{ background-color: {ACCENT};"
             f" color: {TEXT_PRIMARY}; }}"
+            f" QPushButton:disabled {{ background-color: {BG_TERTIARY};"
+            f" color: {TEXT_MUTED}; }}"
         )
         return btn
 
@@ -230,6 +272,7 @@ class SummaryPanel(QWidget):
         self._filter_edit.textChanged.connect(self._filter_keys)
         self._btn_clear.clicked.connect(self._clear_plot)
         self._btn_toggle_legend.clicked.connect(self._toggle_legend)
+        self._btn_resinsight.clicked.connect(self._launch_resinsight)
 
     # ------------------------------------------------------------------
     # Public API
@@ -240,32 +283,34 @@ class SummaryPanel(QWidget):
         self._current_run = run
         self._clear_plot()
         self._tree.clear()
+        self._btn_resinsight.setEnabled(run is not None)
 
         if run is None:
             self._reader = None
+            self._log_viewer.set_run(None)
             self._show_empty_state()
             return
 
+        self._log_viewer.set_run(run)
+
         if self._load_summary(run.output_dir):
             self._populate_tree()
-            self._splitter.setVisible(True)
+            self._tabs.setVisible(True)
             self._empty_label.setVisible(False)
         else:
             self._reader = None
             self._show_empty_state()
             self._empty_label.setText("No summary data available for this run")
+            # Still show tabs (log viewer may have files even without summary)
+            self._tabs.setVisible(True)
+            self._empty_label.setVisible(False)
 
     # ------------------------------------------------------------------
     # Data loading
     # ------------------------------------------------------------------
 
     def _load_summary(self, output_dir: str) -> bool:
-        """Create a :class:`SummaryReader` and attempt to load data.
-
-        Returns ``True`` on success.
-        """
-        # Locate the case base-name inside *output_dir*.  The reader accepts
-        # a path to any of the summary files or the extension-free stem.
+        """Create a :class:`SummaryReader` and attempt to load data."""
         out = Path(output_dir)
         candidates = list(out.glob("*.SMSPEC")) + list(out.glob("*.DATA"))
         if not candidates:
@@ -391,6 +436,30 @@ class SummaryPanel(QWidget):
         self._canvas.draw_idle()
 
     # ------------------------------------------------------------------
+    # ResInsight
+    # ------------------------------------------------------------------
+
+    def _launch_resinsight(self) -> None:
+        """Launch ResInsight with the current run's output directory."""
+        if self._current_run is None:
+            return
+        out_dir = self._current_run.output_dir
+        binary = self._resinsight_binary or "ResInsight"
+        try:
+            subprocess.Popen([binary, out_dir])  # noqa: S603
+        except FileNotFoundError:
+            from PySide6.QtWidgets import QMessageBox
+            QMessageBox.warning(
+                self,
+                "ResInsight Not Found",
+                f"Could not launch ResInsight.\n"
+                f"Configured binary: {binary}\n\n"
+                "Please update the ResInsight binary path in Settings.",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("Failed to launch ResInsight: %s", exc)
+
+    # ------------------------------------------------------------------
     # Filtering
     # ------------------------------------------------------------------
 
@@ -417,6 +486,6 @@ class SummaryPanel(QWidget):
 
     def _show_empty_state(self) -> None:
         """Display the empty-state message and hide content widgets."""
-        self._splitter.setVisible(False)
+        self._tabs.setVisible(False)
         self._empty_label.setVisible(True)
         self._empty_label.setText("Select a completed run to view results")

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -77,6 +78,7 @@ class MainWindow(QMainWindow):
         self._case_panel = CasePanel(self._case_manager)
         self._runs_panel = RunsPanel()
         self._summary_panel = SummaryPanel()
+        self._summary_panel.set_resinsight_binary(config.resinsight_binary)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._case_panel)
@@ -84,7 +86,8 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._summary_panel)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
-        splitter.setStretchFactor(2, 2)
+        splitter.setStretchFactor(2, 3)
+        splitter.setSizes([240, 260, 700])
 
         container = QWidget()
         container.setLayout(_hbox(splitter))
@@ -98,6 +101,7 @@ class MainWindow(QMainWindow):
         self._runs_panel.run_selected.connect(self._on_run_selected)
         self._runs_panel.new_run_requested.connect(self._on_new_run)
         self._runs_panel.run_deleted.connect(self._on_run_deleted)
+        self._runs_panel.notes_changed.connect(self._save_state)
 
         self._sim_runner.progress_updated.connect(self._on_progress_updated)
         self._sim_runner.run_finished.connect(self._on_run_finished)
@@ -170,13 +174,14 @@ class MainWindow(QMainWindow):
         if run is None:
             return
 
+        # Show run results (summary + log files) regardless of status;
+        # completed runs also load the summary chart.
+        self._summary_panel.set_run(run)
         if run.status == RunStatus.COMPLETED:
-            self._summary_panel.set_run(run)
             self.statusBar().showMessage(
                 f"Viewing results for run {run_id[:8]}"
             )
         else:
-            self._summary_panel.set_run(None)
             self.statusBar().showMessage(
                 f"Run {run_id[:8]} – {run.status.value}"
             )
@@ -252,9 +257,25 @@ class MainWindow(QMainWindow):
         self._runs_panel.refresh()
         self._case_panel.refresh()
 
-    def _on_run_deleted(self, case_path: str, run_id: str) -> None:
+    def _on_run_deleted(self, case_path: str, run_id: str, delete_from_disk: bool) -> None:
         # Cancel if still running
         self._sim_runner.cancel_run(run_id)
+
+        # Optionally delete output directory from disk
+        if delete_from_disk:
+            case = self._case_manager.cases.get(case_path)
+            if case is not None:
+                run = case.get_run(run_id)
+                if run is not None and run.output_dir:
+                    try:
+                        shutil.rmtree(run.output_dir, ignore_errors=False)
+                        logger.info("Deleted output directory: %s", run.output_dir)
+                    except OSError as exc:
+                        logger.warning(
+                            "Could not delete output directory %s: %s",
+                            run.output_dir,
+                            exc,
+                        )
 
         case = self._case_manager.cases.get(case_path)
         if case is not None:
@@ -326,6 +347,9 @@ class MainWindow(QMainWindow):
         # Update simulation runner binaries
         self._sim_runner._flow_binary = new_config.flow_binary
         self._sim_runner._mpirun_binary = new_config.mpirun_binary
+
+        # Update ResInsight binary in summary panel
+        self._summary_panel.set_resinsight_binary(new_config.resinsight_binary)
 
         # Re-discover cases from updated search directories
         for search_dir in new_config.search_directories:

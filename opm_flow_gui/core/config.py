@@ -18,6 +18,7 @@ DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.json"
 class Config:
     flow_binary: str = "flow"
     mpirun_binary: str = "mpirun"
+    resinsight_binary: str = "ResInsight"
     output_base_path: str = ""
     search_directories: list[str] = field(default_factory=list)
     case_files: list[str] = field(default_factory=list)
@@ -26,6 +27,7 @@ class Config:
         return {
             "flow_binary": self.flow_binary,
             "mpirun_binary": self.mpirun_binary,
+            "resinsight_binary": self.resinsight_binary,
             "output_base_path": self.output_base_path,
             "search_directories": list(self.search_directories),
             "case_files": list(self.case_files),
@@ -36,6 +38,7 @@ class Config:
         return cls(
             flow_binary=str(data.get("flow_binary", "flow")),
             mpirun_binary=str(data.get("mpirun_binary", "mpirun")),
+            resinsight_binary=str(data.get("resinsight_binary", "ResInsight")),
             output_base_path=str(data.get("output_base_path", "")),
             search_directories=[str(d) for d in data.get("search_directories", [])],
             case_files=[str(f) for f in data.get("case_files", [])],

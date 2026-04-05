@@ -37,6 +37,7 @@ class SimulationRun:
     mpi_processes: int = 1
     progress: float = 0.0
     pid: int | None = None
+    notes: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -51,6 +52,7 @@ class SimulationRun:
             "mpi_processes": self.mpi_processes,
             "progress": self.progress,
             "pid": self.pid,
+            "notes": self.notes,
         }
 
     @classmethod
@@ -67,6 +69,7 @@ class SimulationRun:
             mpi_processes=int(data.get("mpi_processes", 1)),
             progress=float(data.get("progress", 0.0)),
             pid=data.get("pid"),
+            notes=str(data.get("notes", "")),
         )
 
 
