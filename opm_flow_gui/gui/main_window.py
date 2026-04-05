@@ -108,8 +108,10 @@ class MainWindow(QMainWindow):
         # --- Signal connections ----------------------------------------------
         self._case_panel.case_selected.connect(self._on_case_selected)
         self._runs_panel.run_selected.connect(self._on_run_selected)
+        self._runs_panel.runs_multi_selected.connect(self._on_runs_multi_selected)
         self._runs_panel.new_run_requested.connect(self._on_new_run)
         self._runs_panel.run_deleted.connect(self._on_run_deleted)
+        self._runs_panel.run_stop_requested.connect(self._on_run_stop_requested)
         self._runs_panel.notes_changed.connect(self._save_state)
 
         # Collapse cases panel when a run is clicked; re-expand when case panel header is clicked
@@ -198,6 +200,23 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(
                 f"Run {run_id[:8]} – {run.status.value}"
             )
+
+    def _on_runs_multi_selected(self, run_ids: list) -> None:
+        """Handle Shift/Ctrl multi-selection of simulation runs."""
+        if self._current_case_path is None:
+            return
+        case = self._case_manager.cases.get(self._current_case_path)
+        if case is None:
+            return
+        runs = [r for rid in run_ids if (r := case.get_run(rid)) is not None]
+        if not runs:
+            return
+        self._current_run_id = None
+        self._summary_panel.set_multi_run(runs)
+        names = ", ".join(r.name or r.run_id[:8] for r in runs[:3])
+        if len(runs) > 3:
+            names += f"… (+{len(runs) - 3})"
+        self.statusBar().showMessage(f"Comparing {len(runs)} runs: {names}")
 
     def _on_new_run(self) -> None:
         if self._current_case_path is None:
@@ -304,6 +323,11 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Deleted run {run_id[:8]}")
         self._case_panel.refresh()
 
+    def _on_run_stop_requested(self, run_id: str) -> None:
+        """Cancel the running simulation identified by *run_id*."""
+        self._sim_runner.cancel_run(run_id)
+        self.statusBar().showMessage(f"Stopping run {run_id[:8]}…")
+
     # --------------------------------------------------------------------- #
     # Slots – Simulation progress                                             #
     # --------------------------------------------------------------------- #
@@ -365,10 +389,19 @@ class MainWindow(QMainWindow):
         # Update ResInsight binary in summary panel
         self._summary_panel.set_resinsight_binary(new_config.resinsight_binary)
 
-        # Apply the selected theme
+        # Apply the selected theme (also updates module-level colour constants)
         app = QApplication.instance()
         if isinstance(app, QApplication):
             apply_theme(app, new_config.theme)
+
+        # Refresh inline stylesheets on all panels so they reflect the new theme
+        self._case_panel.refresh_styles()
+        self._runs_panel.refresh_styles()
+        self._summary_panel.refresh_styles()
+
+        # Rebuild list contents so that item widgets use the updated colours
+        self._case_panel.refresh()
+        self._runs_panel.refresh()
 
         # Re-discover cases from updated search directories
         for search_dir in new_config.search_directories:

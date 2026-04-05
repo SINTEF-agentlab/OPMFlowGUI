@@ -8,10 +8,11 @@ directory in the system file manager.
 
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QMouseEvent, QResizeEvent
+from PySide6.QtCore import Qt, QByteArray, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QMouseEvent, QPixmap, QResizeEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -26,15 +27,30 @@ from PySide6.QtWidgets import (
 )
 
 from opm_flow_gui.core.case_manager import Case, CaseManager
-from opm_flow_gui.gui.styles import (
-    ACCENT,
-    BG_SECONDARY,
-    BG_TERTIARY,
-    BORDER,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
+import opm_flow_gui.gui.styles as _styles
+
+# ---------------------------------------------------------------------------
+# OPM compact logo – 28 × 28 px PNG with transparent background, embedded as
+# base64 so the package ships without any separate asset file.
+# ---------------------------------------------------------------------------
+_OPM_LOGO_B64 = (
+    "iVBORw0KGgoAAAANSUhEUgAAABwAAAAcCAYAAAByDd+UAAAA6klEQVR4nM2WTRLCMAiFseMR"
+    "6g08mi7qgXRRj+YN2kO4SiZSfh6Vib5dG8hXCCUQddYhYjxe7i/p/fq8ndOAGkSTBx8yYYiP"
+    "GOEekCQp2g3Qgi3ztErvT9fHiEKP9jfaIL5ugYs+IpSia2Hahp5NG2Utmr0wviZlo91brVIU"
+    "hkJdYAQWsR2ItumMFIEG5VEWBlSlXMs8tYCQr5tSCyY9pwO/1f8D+ZlFz7B2mqxK1fxKt3Ej"
+    "9Ppo1FYFop1DsrGyUoHS3YVCI80bug/RtHowIrDTaO3KAmn6/YiRAbYmN/O3iMybqE/3Qbi7"
+    "3qxcmQXOfEYQAAAAAElFTkSuQmCC"
 )
+
+
+def _opm_logo_pixmap(height: int = 20) -> QPixmap:
+    """Return a QPixmap of the OPM logo scaled to *height* pixels."""
+    raw = QByteArray(base64.b64decode(_OPM_LOGO_B64))
+    pixmap = QPixmap()
+    pixmap.loadFromData(raw, "PNG")
+    if not pixmap.isNull():
+        pixmap = pixmap.scaledToHeight(height, Qt.TransformationMode.SmoothTransformation)
+    return pixmap
 
 
 class _ClickableHeader(QLabel):
@@ -83,14 +99,14 @@ class _CaseItemWidget(QWidget):
 
         name_label = QLabel(case.name)
         name_label.setStyleSheet(
-            f"font-weight: bold; font-size: 13px; color: {TEXT_PRIMARY};"
+            f"font-weight: bold; font-size: 13px; color: {_styles.TEXT_PRIMARY};"
             " background: transparent;"
         )
         left.addWidget(name_label)
 
         path_label = _ElidingLabel(case.directory)
         path_label.setStyleSheet(
-            f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;"
+            f"font-size: 11px; color: {_styles.TEXT_MUTED}; background: transparent;"
         )
         path_label.setToolTip(case.directory)
         path_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
@@ -102,7 +118,7 @@ class _CaseItemWidget(QWidget):
         badge = QLabel(badge_text)
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         badge.setStyleSheet(
-            f"background-color: {ACCENT}; color: {TEXT_PRIMARY};"
+            f"background-color: {_styles.ACCENT}; color: {_styles.TEXT_PRIMARY};"
             " border-radius: 8px; font-size: 11px; font-weight: bold;"
             " padding: 2px 8px;"
         )
@@ -144,17 +160,34 @@ class CasePanel(QWidget):
         layout.setSpacing(0)
 
         # --- header (click to expand when collapsed) ---
+        header_widget = QWidget()
+        header_widget.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+        header_layout = QHBoxLayout(header_widget)
+        header_layout.setContentsMargins(12, 8, 12, 8)
+        header_layout.setSpacing(8)
+
+        self._logo_label = QLabel()
+        pixmap = _opm_logo_pixmap(20)
+        if not pixmap.isNull():
+            self._logo_label.setPixmap(pixmap)
+        self._logo_label.setFixedSize(24, 24)
+        self._logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._logo_label.setStyleSheet("background: transparent;")
+        header_layout.addWidget(self._logo_label)
+
         self._header = _ClickableHeader("Cases ▶")
         self._header.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {TEXT_PRIMARY};"
-            f" padding: 12px 12px 8px 12px; background-color: {BG_SECONDARY};"
+            f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
+            f" background-color: {_styles.BG_SECONDARY};"
             " cursor: pointer;"
         )
         self._header.setAccessibleDescription(
             "Cases panel header – click to expand the panel when it is collapsed"
         )
         self._header.clicked.connect(self.expand_requested)
-        layout.addWidget(self._header)
+        header_layout.addWidget(self._header, 1)
+
+        layout.addWidget(header_widget)
 
         # --- search / filter ---
         self._filter_edit = QLineEdit()
@@ -162,15 +195,15 @@ class CasePanel(QWidget):
         self._filter_edit.setClearButtonEnabled(True)
         self._filter_edit.setStyleSheet(
             f"QLineEdit {{ margin: 6px 8px; padding: 6px 10px;"
-            f" border: 1px solid {BORDER}; border-radius: 6px;"
-            f" background-color: {BG_TERTIARY}; color: {TEXT_PRIMARY}; }}"
+            f" border: 1px solid {_styles.BORDER}; border-radius: 6px;"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_PRIMARY}; }}"
         )
         layout.addWidget(self._filter_edit)
 
         # --- toolbar row ---
-        toolbar = QWidget()
-        toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
-        tb_layout = QHBoxLayout(toolbar)
+        self._toolbar = QWidget()
+        self._toolbar.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+        tb_layout = QHBoxLayout(self._toolbar)
         tb_layout.setContentsMargins(8, 4, 8, 4)
         tb_layout.setSpacing(4)
 
@@ -186,23 +219,23 @@ class CasePanel(QWidget):
         tb_layout.addWidget(self._btn_remove)
         tb_layout.addStretch()
 
-        hint = QLabel("Double-click to open folder")
-        hint.setStyleSheet(
-            f"font-size: 10px; color: {TEXT_MUTED}; background: transparent;"
+        self._hint_label = QLabel("Double-click to open folder")
+        self._hint_label.setStyleSheet(
+            f"font-size: 10px; color: {_styles.TEXT_MUTED}; background: transparent;"
         )
-        tb_layout.addWidget(hint)
+        tb_layout.addWidget(self._hint_label)
 
-        layout.addWidget(toolbar)
+        layout.addWidget(self._toolbar)
 
         # --- case list ---
         self._list = QListWidget()
         self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
         self._list.setStyleSheet(
-            f"QListWidget {{ background-color: {BG_SECONDARY}; border: none;"
+            f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; }}"
-            f" QListWidget::item {{ border-bottom: 1px solid {BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {BG_TERTIARY}; }}"
-            f" QListWidget::item:hover {{ background-color: {BG_TERTIARY}; }}"
+            f" QListWidget::item {{ border-bottom: 1px solid {_styles.BORDER}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         layout.addWidget(self._list, 1)
 
@@ -213,12 +246,48 @@ class CasePanel(QWidget):
         btn.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
         btn.setStyleSheet(
             f"QPushButton {{ padding: 4px 8px; border-radius: 4px;"
-            f" background-color: {BG_TERTIARY}; color: {TEXT_SECONDARY};"
-            f" border: 1px solid {BORDER}; font-size: 12px; }}"
-            f" QPushButton:hover {{ background-color: {ACCENT};"
-            f" color: {TEXT_PRIMARY}; }}"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_SECONDARY};"
+            f" border: 1px solid {_styles.BORDER}; font-size: 12px; }}"
+            f" QPushButton:hover {{ background-color: {_styles.ACCENT};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
         )
         return btn
+
+    def refresh_styles(self) -> None:
+        """Re-apply inline stylesheets using the current active theme colours."""
+        # Header widget background
+        header_widget = self._header.parentWidget()
+        if header_widget is not None:
+            header_widget.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+        self._header.setStyleSheet(
+            f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
+            f" background-color: {_styles.BG_SECONDARY};"
+            " cursor: pointer;"
+        )
+        self._filter_edit.setStyleSheet(
+            f"QLineEdit {{ margin: 6px 8px; padding: 6px 10px;"
+            f" border: 1px solid {_styles.BORDER}; border-radius: 6px;"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_PRIMARY}; }}"
+        )
+        self._toolbar.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+        for btn in (self._btn_add, self._btn_scan, self._btn_remove):
+            btn.setStyleSheet(
+                f"QPushButton {{ padding: 4px 8px; border-radius: 4px;"
+                f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_SECONDARY};"
+                f" border: 1px solid {_styles.BORDER}; font-size: 12px; }}"
+                f" QPushButton:hover {{ background-color: {_styles.ACCENT};"
+                f" color: {_styles.TEXT_PRIMARY}; }}"
+            )
+        self._hint_label.setStyleSheet(
+            f"font-size: 10px; color: {_styles.TEXT_MUTED}; background: transparent;"
+        )
+        self._list.setStyleSheet(
+            f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
+            f" outline: none; }}"
+            f" QListWidget::item {{ border-bottom: 1px solid {_styles.BORDER}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
+        )
 
     # ------------------------------------------------------------------
     # Signal wiring

@@ -25,17 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from opm_flow_gui.core.case_manager import Case, RunStatus, SimulationRun
-from opm_flow_gui.gui.styles import (
-    ACCENT,
-    ACCENT_HOVER,
-    BG_SECONDARY,
-    BG_TERTIARY,
-    BORDER,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-    get_status_color,
-)
+import opm_flow_gui.gui.styles as _styles
 
 
 def _format_elapsed(started_at: str, finished_at: str | None = None) -> str:
@@ -78,6 +68,7 @@ class RunItemWidget(QWidget):
     """Card-like widget representing a single simulation run."""
 
     delete_clicked = Signal(str)   # run_id
+    stop_clicked = Signal(str)     # run_id
     notes_saved = Signal(str)      # run_id (notes already written to run object)
 
     def __init__(self, run: SimulationRun, parent: QWidget | None = None) -> None:
@@ -101,7 +92,7 @@ class RunItemWidget(QWidget):
         display_name = run.name if run.name else f"\u25b6 {short_id}"
         id_label = QLabel(display_name)
         id_label.setStyleSheet(
-            f"font-weight: bold; font-size: 13px; color: {TEXT_PRIMARY};"
+            f"font-weight: bold; font-size: 13px; color: {_styles.TEXT_PRIMARY};"
             " background: transparent;"
         )
         id_label.setToolTip(run.run_id)
@@ -109,7 +100,7 @@ class RunItemWidget(QWidget):
 
         date_label = QLabel(created)
         date_label.setStyleSheet(
-            f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;"
+            f"font-size: 11px; color: {_styles.TEXT_MUTED}; background: transparent;"
         )
         top_row.addWidget(date_label)
 
@@ -122,23 +113,38 @@ class RunItemWidget(QWidget):
         self._btn_notes.setFixedWidth(28)
         self._btn_notes.setStyleSheet(
             f"QPushButton {{ padding: 2px 4px; border-radius: 3px;"
-            f" background-color: transparent; color: {TEXT_MUTED};"
-            f" border: 1px solid {BORDER}; font-size: 13px; }}"
-            f" QPushButton:hover {{ background-color: {BG_TERTIARY};"
-            f" color: {TEXT_PRIMARY}; }}"
+            f" background-color: transparent; color: {_styles.TEXT_MUTED};"
+            f" border: 1px solid {_styles.BORDER}; font-size: 13px; }}"
+            f" QPushButton:hover {{ background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
         )
         self._btn_notes.clicked.connect(self._edit_notes)
         top_row.addWidget(self._btn_notes)
+
+        self._btn_stop = QPushButton("Stop")
+        self._btn_stop.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_stop.setFixedHeight(22)
+        self._btn_stop.setToolTip("Stop this running simulation")
+        self._btn_stop.setStyleSheet(
+            "QPushButton { padding: 2px 8px; border-radius: 3px;"
+            " background-color: transparent; color: #f87171;"
+            " border: 1px solid #f87171; font-size: 11px; }"
+            " QPushButton:hover { background-color: #dc2626;"
+            " color: #ffffff; border-color: #dc2626; }"
+        )
+        self._btn_stop.clicked.connect(lambda: self.stop_clicked.emit(self._run_id))
+        self._btn_stop.setVisible(run.status == RunStatus.RUNNING)
+        top_row.addWidget(self._btn_stop)
 
         self._btn_delete = QPushButton("Delete")
         self._btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
         self._btn_delete.setFixedHeight(22)
         self._btn_delete.setStyleSheet(
             f"QPushButton {{ padding: 2px 8px; border-radius: 3px;"
-            f" background-color: transparent; color: {TEXT_MUTED};"
-            f" border: 1px solid {BORDER}; font-size: 11px; }}"
+            f" background-color: transparent; color: {_styles.TEXT_MUTED};"
+            f" border: 1px solid {_styles.BORDER}; font-size: 11px; }}"
             f" QPushButton:hover {{ background-color: #dc2626;"
-            f" color: {TEXT_PRIMARY}; border-color: #dc2626; }}"
+            f" color: {_styles.TEXT_PRIMARY}; border-color: #dc2626; }}"
         )
         self._btn_delete.clicked.connect(lambda: self.delete_clicked.emit(self._run_id))
         top_row.addWidget(self._btn_delete)
@@ -150,7 +156,7 @@ class RunItemWidget(QWidget):
         info_row.setSpacing(8)
 
         status_text = run.status.value.upper()
-        status_color = get_status_color(status_text)
+        status_color = _styles.get_status_color(status_text)
 
         self._status_label = QLabel(status_text)
         self._status_label.setStyleSheet(
@@ -161,7 +167,7 @@ class RunItemWidget(QWidget):
 
         mpi_label = QLabel(f"MPI: {run.mpi_processes}")
         mpi_label.setStyleSheet(
-            f"font-size: 11px; color: {TEXT_SECONDARY}; background: transparent;"
+            f"font-size: 11px; color: {_styles.TEXT_SECONDARY}; background: transparent;"
         )
         info_row.addWidget(mpi_label)
 
@@ -171,7 +177,7 @@ class RunItemWidget(QWidget):
         # ---- row 3: notes preview ----
         self._notes_label = QLabel(run.notes if run.notes else "")
         self._notes_label.setStyleSheet(
-            f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;"
+            f"font-size: 11px; color: {_styles.TEXT_MUTED}; background: transparent;"
             " font-style: italic;"
         )
         self._notes_label.setWordWrap(True)
@@ -185,10 +191,10 @@ class RunItemWidget(QWidget):
         self._progress_bar.setFixedHeight(6)
         self._progress_bar.setTextVisible(False)
         self._progress_bar.setStyleSheet(
-            f"QProgressBar {{ background-color: {BG_TERTIARY};"
+            f"QProgressBar {{ background-color: {_styles.BG_TERTIARY};"
             f" border: none; border-radius: 3px;"
             f" min-height: 6px; max-height: 6px; }}"
-            f" QProgressBar::chunk {{ background-color: {ACCENT};"
+            f" QProgressBar::chunk {{ background-color: {_styles.ACCENT};"
             f" border-radius: 3px; }}"
         )
 
@@ -213,14 +219,16 @@ class RunItemWidget(QWidget):
     def set_status(self, status: str) -> None:
         """Update the status label text and colour."""
         upper = status.upper()
-        color = get_status_color(upper)
+        color = _styles.get_status_color(upper)
         self._status_label.setText(upper)
         self._status_label.setStyleSheet(
             f"font-size: 12px; font-weight: bold; color: {color};"
             " background: transparent;"
         )
-        # Show progress bar when running
-        if upper == "RUNNING":
+        # Show/hide stop button and progress bar based on status
+        is_running = upper == "RUNNING"
+        self._btn_stop.setVisible(is_running)
+        if is_running:
             self._progress_bar.setVisible(True)
         self._refresh_tooltip()
 
@@ -287,7 +295,9 @@ class RunsPanel(QWidget):
     """Middle panel that lists simulation runs for the selected case."""
 
     run_selected = Signal(str)
+    runs_multi_selected = Signal(list)     # list[str] of run_ids (≥2 selected)
     run_deleted = Signal(str, str, bool)   # (case_path, run_id, delete_from_disk)
+    run_stop_requested = Signal(str)       # run_id
     new_run_requested = Signal()
     notes_changed = Signal()               # notes updated; trigger a state save
 
@@ -307,17 +317,17 @@ class RunsPanel(QWidget):
         layout.setSpacing(0)
 
         # --- header ---
-        header = QLabel("Simulation Runs")
-        header.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {TEXT_PRIMARY};"
-            f" padding: 12px 12px 8px 12px; background-color: {BG_SECONDARY};"
+        self._header = QLabel("Simulation Runs")
+        self._header.setStyleSheet(
+            f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
+            f" padding: 12px 12px 8px 12px; background-color: {_styles.BG_SECONDARY};"
         )
-        layout.addWidget(header)
+        layout.addWidget(self._header)
 
         # --- new-run button ---
-        btn_bar = QWidget()
-        btn_bar.setStyleSheet(f"background-color: {BG_SECONDARY};")
-        btn_layout = QHBoxLayout(btn_bar)
+        self._btn_bar = QWidget()
+        self._btn_bar.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+        btn_layout = QHBoxLayout(self._btn_bar)
         btn_layout.setContentsMargins(8, 4, 8, 8)
 
         self._btn_new_run = QPushButton("+ New Run")
@@ -327,25 +337,25 @@ class RunsPanel(QWidget):
         )
         self._btn_new_run.setStyleSheet(
             f"QPushButton {{ padding: 8px 16px; border-radius: 6px;"
-            f" background-color: {ACCENT}; color: {TEXT_PRIMARY};"
+            f" background-color: {_styles.ACCENT}; color: {_styles.TEXT_PRIMARY};"
             f" font-size: 13px; font-weight: bold; border: none; }}"
-            f" QPushButton:hover {{ background-color: {ACCENT_HOVER}; }}"
-            f" QPushButton:disabled {{ background-color: {BG_TERTIARY};"
-            f" color: {TEXT_MUTED}; }}"
+            f" QPushButton:hover {{ background-color: {_styles.ACCENT_HOVER}; }}"
+            f" QPushButton:disabled {{ background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.TEXT_MUTED}; }}"
         )
         self._btn_new_run.setEnabled(False)
         btn_layout.addWidget(self._btn_new_run)
-        layout.addWidget(btn_bar)
+        layout.addWidget(self._btn_bar)
 
         # --- run list ---
         self._list = QListWidget()
-        self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self._list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self._list.setStyleSheet(
-            f"QListWidget {{ background-color: {BG_SECONDARY}; border: none;"
+            f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; }}"
-            f" QListWidget::item {{ border-bottom: 1px solid {BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {BG_TERTIARY}; }}"
-            f" QListWidget::item:hover {{ background-color: {BG_TERTIARY}; }}"
+            f" QListWidget::item {{ border-bottom: 1px solid {_styles.BORDER}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         layout.addWidget(self._list, 1)
 
@@ -353,7 +363,7 @@ class RunsPanel(QWidget):
         self._empty_label = QLabel("Select a case to view runs")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 13px; background: transparent;"
+            f"color: {_styles.TEXT_MUTED}; font-size: 13px; background: transparent;"
         )
         layout.addWidget(self._empty_label, 1)
 
@@ -364,7 +374,7 @@ class RunsPanel(QWidget):
     # Signal wiring
     # ------------------------------------------------------------------
     def _connect_signals(self) -> None:
-        self._list.currentItemChanged.connect(self._on_selection_changed)
+        self._list.itemSelectionChanged.connect(self._on_selection_changed)
         self._btn_new_run.clicked.connect(self.new_run_requested.emit)
 
     # ------------------------------------------------------------------
@@ -412,15 +422,51 @@ class RunsPanel(QWidget):
         if widget is not None:
             widget.set_status(status)
 
+    def refresh_styles(self) -> None:
+        """Re-apply inline stylesheets using the current active theme colours."""
+        self._header.setStyleSheet(
+            f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
+            f" padding: 12px 12px 8px 12px; background-color: {_styles.BG_SECONDARY};"
+        )
+        self._btn_bar.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+        self._btn_new_run.setStyleSheet(
+            f"QPushButton {{ padding: 8px 16px; border-radius: 6px;"
+            f" background-color: {_styles.ACCENT}; color: {_styles.TEXT_PRIMARY};"
+            f" font-size: 13px; font-weight: bold; border: none; }}"
+            f" QPushButton:hover {{ background-color: {_styles.ACCENT_HOVER}; }}"
+            f" QPushButton:disabled {{ background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.TEXT_MUTED}; }}"
+        )
+        self._list.setStyleSheet(
+            f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
+            f" outline: none; }}"
+            f" QListWidget::item {{ border-bottom: 1px solid {_styles.BORDER}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
+        )
+        self._empty_label.setStyleSheet(
+            f"color: {_styles.TEXT_MUTED}; font-size: 13px; background: transparent;"
+        )
+
     # ------------------------------------------------------------------
     # Slot implementations
     # ------------------------------------------------------------------
     def _on_selection_changed(self) -> None:
-        """Emit *run_selected* with the run-id of the newly selected row."""
-        item = self._list.currentItem()
-        if item is not None:
-            run_id: str = item.data(Qt.ItemDataRole.UserRole)
-            self.run_selected.emit(run_id)
+        """Emit *run_selected* or *runs_multi_selected* depending on the count."""
+        selected_items = self._list.selectedItems()
+        if not selected_items:
+            return
+
+        run_ids = [
+            item.data(Qt.ItemDataRole.UserRole)
+            for item in selected_items
+            if item.data(Qt.ItemDataRole.UserRole) is not None
+        ]
+
+        if len(run_ids) == 1:
+            self.run_selected.emit(run_ids[0])
+        else:
+            self.runs_multi_selected.emit(run_ids)
 
     def _on_delete_clicked(self, run_id: str) -> None:
         """Ask for confirmation then emit *run_deleted* with disk-delete flag."""
@@ -449,6 +495,10 @@ class RunsPanel(QWidget):
         """Forward notes-saved notification; notes already written to run object."""
         self.notes_changed.emit()
 
+    def _on_stop_clicked(self, run_id: str) -> None:
+        """Forward stop request to the main window."""
+        self.run_stop_requested.emit(run_id)
+
     # ------------------------------------------------------------------
     # Widget factory
     # ------------------------------------------------------------------
@@ -456,6 +506,7 @@ class RunsPanel(QWidget):
         """Create and register a :class:`RunItemWidget` for *run*."""
         widget = RunItemWidget(run, parent=self._list)
         widget.delete_clicked.connect(self._on_delete_clicked)
+        widget.stop_clicked.connect(self._on_stop_clicked)
         widget.notes_saved.connect(self._on_notes_saved)
         self._run_widgets[run.run_id] = widget
         return widget
