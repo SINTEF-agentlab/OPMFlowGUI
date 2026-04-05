@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opm-flow-gui"
+version = "0.1.0"
+description = "A graphical front-end for the OPM Flow reservoir simulator"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Olav Møyner" },
+]
+requires-python = ">=3.10"
+dependencies = [
+    "PySide6>=6.5",
+    "matplotlib>=3.7",
+    "resdata>=4.0",
+]
+
+[project.scripts]
+opm-flow-gui = "opm_flow_gui.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["opm_flow_gui*"]
