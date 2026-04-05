@@ -82,7 +82,7 @@ class SummaryPanel(QWidget):
         self._reader: SummaryReader | None = None
         self._current_run: SimulationRun | None = None
         self._multi_runs: list[SimulationRun] = []
-        self._multi_readers: list[SummaryReader] = []
+        self._multi_readers: list[SummaryReader | None] = []
         self._resinsight_binary: str = "ResInsight"
         self._legend_visible: bool = True
         self._plotted_keys: list[str] = []
@@ -354,7 +354,7 @@ class SummaryPanel(QWidget):
             out = Path(run.output_dir)
             candidates = list(out.glob("*.SMSPEC")) + list(out.glob("*.DATA"))
             if not candidates:
-                self._multi_readers.append(None)  # type: ignore[arg-type]
+                self._multi_readers.append(None)
                 continue
             r = SummaryReader(str(candidates[0]))
             if r.load():
@@ -362,7 +362,7 @@ class SummaryPanel(QWidget):
                 if first_reader is None:
                     first_reader = r
             else:
-                self._multi_readers.append(None)  # type: ignore[arg-type]
+                self._multi_readers.append(None)
 
         if first_reader is not None:
             self._reader = first_reader

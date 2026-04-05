@@ -126,11 +126,11 @@ class RunItemWidget(QWidget):
         self._btn_stop.setFixedHeight(22)
         self._btn_stop.setToolTip("Stop this running simulation")
         self._btn_stop.setStyleSheet(
-            "QPushButton { padding: 2px 8px; border-radius: 3px;"
-            " background-color: transparent; color: #f87171;"
-            " border: 1px solid #f87171; font-size: 11px; }"
-            " QPushButton:hover { background-color: #dc2626;"
-            " color: #ffffff; border-color: #dc2626; }"
+            f"QPushButton {{ padding: 2px 8px; border-radius: 3px;"
+            f" background-color: transparent; color: {_styles.ERROR};"
+            f" border: 1px solid {_styles.ERROR}; font-size: 11px; }}"
+            f" QPushButton:hover {{ background-color: {_styles.ERROR};"
+            f" color: {_styles.TEXT_PRIMARY}; border-color: {_styles.ERROR}; }}"
         )
         self._btn_stop.clicked.connect(lambda: self.stop_clicked.emit(self._run_id))
         self._btn_stop.setVisible(run.status == RunStatus.RUNNING)
