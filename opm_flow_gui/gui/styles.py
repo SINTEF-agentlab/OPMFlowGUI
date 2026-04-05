@@ -515,8 +515,8 @@ QGroupBox {{
     background-color: {c.bg_secondary};
     border: 1px solid {c.border};
     border-radius: 8px;
-    margin-top: 14px;
-    padding: 16px 12px 12px 12px;
+    margin-top: 22px;
+    padding: 20px 12px 12px 12px;
     font-weight: 600;
 }}
 
@@ -526,6 +526,8 @@ QGroupBox::title {{
     padding: 4px 12px;
     color: {c.accent_light};
     font-size: 13px;
+    background-color: {c.bg_secondary};
+    border-radius: 4px;
 }}
 
 /* ===== Tabs ===== */
@@ -776,8 +778,40 @@ def apply_style(app: QApplication) -> None:
 
 
 def apply_theme(app: QApplication, theme_name: str) -> None:
-    """Apply the named theme to *app* (stylesheet + palette + font)."""
+    """Apply the named theme to *app* (stylesheet + palette + font).
+
+    Also updates the module-level colour constants so that any code that
+    re-reads them (e.g. via ``import opm_flow_gui.gui.styles as s; s.ACCENT``)
+    will obtain the new values when refreshing widget stylesheets.
+    """
     colors = THEMES.get(theme_name, THEMES[DEFAULT_THEME])
+
+    # Update module-level colour constants so refresh_styles() calls can
+    # pick up the new values without re-importing.
+    _g = globals()
+    _g["_active"] = colors
+    _g["BG_PRIMARY"] = colors.bg_primary
+    _g["BG_SECONDARY"] = colors.bg_secondary
+    _g["BG_TERTIARY"] = colors.bg_tertiary
+    _g["ACCENT"] = colors.accent
+    _g["ACCENT_HOVER"] = colors.accent_hover
+    _g["ACCENT_LIGHT"] = colors.accent_light
+    _g["TEXT_PRIMARY"] = colors.text_primary
+    _g["TEXT_SECONDARY"] = colors.text_secondary
+    _g["TEXT_MUTED"] = colors.text_muted
+    _g["SUCCESS"] = colors.success
+    _g["WARNING"] = colors.warning
+    _g["ERROR"] = colors.error
+    _g["BORDER"] = colors.border
+    _g["SELECTION"] = colors.selection
+    _g["STYLESHEET"] = build_stylesheet(colors)
+    _g["_STATUS_COLOURS"] = {
+        "RUNNING": colors.accent,
+        "COMPLETED": colors.success,
+        "FAILED": colors.error,
+        "CANCELLED": colors.warning,
+        "PENDING": colors.text_muted,
+    }
 
     if sys.platform == "darwin":
         font = QFont("Helvetica Neue", 13)

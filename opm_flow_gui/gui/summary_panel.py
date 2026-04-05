@@ -40,6 +40,7 @@ from opm_flow_gui.core.case_manager import SimulationRun
 from opm_flow_gui.core.summary_reader import SummaryReader
 from opm_flow_gui.gui.log_viewer import LogViewerPanel
 from opm_flow_gui.gui.system_monitor import SystemMonitorPanel
+import opm_flow_gui.gui.styles as _styles
 from opm_flow_gui.gui.styles import (
     ACCENT,
     ACCENT_HOVER,
@@ -80,10 +81,13 @@ class SummaryPanel(QWidget):
 
         self._reader: SummaryReader | None = None
         self._current_run: SimulationRun | None = None
+        self._multi_runs: list[SimulationRun] = []
+        self._multi_readers: list[SummaryReader | None] = []
         self._resinsight_binary: str = "ResInsight"
         self._legend_visible: bool = True
         self._plotted_keys: list[str] = []
         self._color_index: int = 0
+        self._last_selected_key: str | None = None   # persists across run switches
 
         self._setup_ui()
         self._connect_signals()
@@ -106,12 +110,12 @@ class SummaryPanel(QWidget):
         root.setSpacing(0)
 
         # --- header ---
-        header = QLabel("Results")
-        header.setStyleSheet(
+        self._header = QLabel("Results")
+        self._header.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {TEXT_PRIMARY};"
             f" padding: 12px 12px 8px 12px; background-color: {BG_SECONDARY};"
         )
-        root.addWidget(header)
+        root.addWidget(self._header)
 
         # --- tab widget ---
         self._tabs = QTabWidget()
@@ -251,16 +255,16 @@ class SummaryPanel(QWidget):
         return btn
 
     def _style_axes(self) -> None:
-        """Apply dark-theme styling to the matplotlib axes."""
+        """Apply the current theme styling to the matplotlib axes."""
         ax = self._axes
-        ax.set_facecolor(BG_SECONDARY)
-        ax.tick_params(colors=TEXT_SECONDARY, which="both")
-        ax.xaxis.label.set_color(TEXT_SECONDARY)
-        ax.yaxis.label.set_color(TEXT_SECONDARY)
-        ax.title.set_color(TEXT_PRIMARY)
+        ax.set_facecolor(_styles.BG_SECONDARY)
+        ax.tick_params(colors=_styles.TEXT_SECONDARY, which="both")
+        ax.xaxis.label.set_color(_styles.TEXT_SECONDARY)
+        ax.yaxis.label.set_color(_styles.TEXT_SECONDARY)
+        ax.title.set_color(_styles.TEXT_PRIMARY)
         for spine in ax.spines.values():
-            spine.set_color(BORDER)
-        ax.grid(True, color=BG_TERTIARY, linewidth=0.5)
+            spine.set_color(_styles.BORDER)
+        ax.grid(True, color=_styles.BG_TERTIARY, linewidth=0.5)
 
     def _next_color(self) -> str:
         color = _PLOT_COLORS[self._color_index % len(_PLOT_COLORS)]
@@ -294,11 +298,18 @@ class SummaryPanel(QWidget):
 
     def set_run(self, run: SimulationRun | None) -> None:
         """Load summary data for *run*, or clear the panel when ``None``."""
+        # Exit multi-run mode when switching to single run
+        self._multi_runs = []
+        self._multi_readers = []
         self._current_run = run
         self._clear_plot()
         self._tree.clear()
         self._btn_resinsight.setEnabled(run is not None)
         self._btn_pop_out.setEnabled(False)
+
+        # Re-enable log viewer tab (may have been disabled in multi-run mode)
+        log_idx = self._tabs.indexOf(self._log_viewer)
+        self._tabs.setTabEnabled(log_idx, True)
 
         if run is None:
             self._reader = None
@@ -309,6 +320,54 @@ class SummaryPanel(QWidget):
 
         if self._load_summary(run.output_dir):
             self._populate_tree()
+            self._restore_key_selection()
+
+    def set_multi_run(self, runs: list[SimulationRun]) -> None:
+        """Overlay summary data from multiple *runs* on the same plot.
+
+        The log viewer tab is disabled while multiple runs are selected
+        because there is no single log to display.
+        """
+        if len(runs) <= 1:
+            self.set_run(runs[0] if runs else None)
+            return
+
+        self._multi_runs = list(runs)
+        self._current_run = None
+        self._reader = None
+
+        self._clear_plot()
+        self._tree.clear()
+        self._btn_resinsight.setEnabled(False)
+        self._btn_pop_out.setEnabled(False)
+
+        # Disable the log viewer tab while multiple runs are selected
+        log_idx = self._tabs.indexOf(self._log_viewer)
+        self._tabs.setTabEnabled(log_idx, False)
+        if self._tabs.currentIndex() == log_idx:
+            self._tabs.setCurrentIndex(0)
+
+        # Load a reader for each run; populate tree from the first successful one
+        self._multi_readers = []
+        first_reader: SummaryReader | None = None
+        for run in self._multi_runs:
+            out = Path(run.output_dir)
+            candidates = list(out.glob("*.SMSPEC")) + list(out.glob("*.DATA"))
+            if not candidates:
+                self._multi_readers.append(None)
+                continue
+            r = SummaryReader(str(candidates[0]))
+            if r.load():
+                self._multi_readers.append(r)
+                if first_reader is None:
+                    first_reader = r
+            else:
+                self._multi_readers.append(None)
+
+        if first_reader is not None:
+            self._reader = first_reader
+            self._populate_tree()
+            self._restore_key_selection()
 
     # ------------------------------------------------------------------
     # Data loading
@@ -347,7 +406,7 @@ class SummaryPanel(QWidget):
             font = parent.font(0)
             font.setBold(True)
             parent.setFont(0, font)
-            parent.setForeground(0, QBrush(QColor(ACCENT_LIGHT)))
+            parent.setForeground(0, QBrush(QColor(_styles.ACCENT_LIGHT)))
 
             for key in keys:
                 child = QTreeWidgetItem(parent, [key])
@@ -362,6 +421,7 @@ class SummaryPanel(QWidget):
         key = item.data(0, Qt.ItemDataRole.UserRole)
         if key is None:
             return
+        self._last_selected_key = key
         self._plot_vector(key)
 
     def _on_current_item_changed(
@@ -373,18 +433,30 @@ class SummaryPanel(QWidget):
         key = current.data(0, Qt.ItemDataRole.UserRole)
         if key is None:
             return
+        self._last_selected_key = key
         self._plot_vector(key)
 
+    def _restore_key_selection(self) -> None:
+        """Re-select and plot the last selected key if it exists in the new tree."""
+        if self._last_selected_key is None:
+            return
+        root = self._tree.invisibleRootItem()
+        for cat_idx in range(root.childCount()):
+            cat = root.child(cat_idx)
+            for key_idx in range(cat.childCount()):
+                child = cat.child(key_idx)
+                if child.data(0, Qt.ItemDataRole.UserRole) == self._last_selected_key:
+                    self._tree.blockSignals(True)
+                    self._tree.setCurrentItem(child)
+                    self._tree.blockSignals(False)
+                    cat.setExpanded(True)
+                    self._plot_vector(self._last_selected_key)
+                    return
+
     def _plot_vector(self, key: str) -> None:
-        """Plot a single summary vector on the canvas."""
+        """Plot a summary vector; in multi-run mode, overlay all runs."""
         if self._reader is None:
             return
-
-        vector = self._reader.get_vector(key)
-        if vector is None:
-            return
-
-        dates, values = vector
 
         if not self._chk_overlay.isChecked():
             self._axes.clear()
@@ -392,22 +464,35 @@ class SummaryPanel(QWidget):
             self._plotted_keys.clear()
             self._color_index = 0
 
-        color = self._next_color()
-        self._axes.plot(
-            dates,
-            values,
-            color=color,
-            linewidth=1.5,
-            label=key,
-        )
-
-        self._plotted_keys.append(key)
-
-        # Axis labels / title
         info = self._reader.get_info()
         unit = info.units.get(key, "") if info else ""
         ylabel = unit if unit else "Value"
 
+        if self._multi_runs:
+            # Multi-run overlay: one line per run reader
+            readers_and_names = list(zip(self._multi_readers, self._multi_runs))
+            for reader, run in readers_and_names:
+                if reader is None:
+                    continue
+                vector = reader.get_vector(key)
+                if vector is None:
+                    continue
+                dates, values = vector
+                color = self._next_color()
+                label = run.name if run.name else run.run_id[:8]
+                self._axes.plot(dates, values, color=color, linewidth=1.5, label=label)
+        else:
+            # Single run
+            vector = self._reader.get_vector(key)
+            if vector is None:
+                return
+            dates, values = vector
+            color = self._next_color()
+            self._axes.plot(dates, values, color=color, linewidth=1.5, label=key)
+
+        self._plotted_keys.append(key)
+
+        # Axis labels / title
         if len(self._plotted_keys) == 1:
             self._axes.set_title(key, fontsize=13, fontweight="bold")
             self._axes.set_ylabel(ylabel, fontsize=11)
@@ -426,9 +511,9 @@ class SummaryPanel(QWidget):
             legend = self._axes.legend(
                 loc="best",
                 fontsize=10,
-                facecolor=BG_TERTIARY,
-                edgecolor=BORDER,
-                labelcolor=TEXT_PRIMARY,
+                facecolor=_styles.BG_TERTIARY,
+                edgecolor=_styles.BORDER,
+                labelcolor=_styles.TEXT_PRIMARY,
             )
             legend.get_frame().set_alpha(0.9)
 
@@ -474,19 +559,19 @@ class SummaryPanel(QWidget):
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(0, 0, 0, 0)
 
-        fig = Figure(facecolor=BG_PRIMARY)
+        fig = Figure(facecolor=_styles.BG_PRIMARY)
         canvas = FigureCanvasQTAgg(fig)
         ax = fig.add_subplot(111)
 
-        # Copy current axes content to the new figure
-        ax.set_facecolor(BG_SECONDARY)
-        ax.tick_params(colors=TEXT_SECONDARY, which="both")
-        ax.xaxis.label.set_color(TEXT_SECONDARY)
-        ax.yaxis.label.set_color(TEXT_SECONDARY)
-        ax.title.set_color(TEXT_PRIMARY)
+        # Style the new axes with the current theme colours
+        ax.set_facecolor(_styles.BG_SECONDARY)
+        ax.tick_params(colors=_styles.TEXT_SECONDARY, which="both")
+        ax.xaxis.label.set_color(_styles.TEXT_SECONDARY)
+        ax.yaxis.label.set_color(_styles.TEXT_SECONDARY)
+        ax.title.set_color(_styles.TEXT_PRIMARY)
         for spine in ax.spines.values():
-            spine.set_color(BORDER)
-        ax.grid(True, color=BG_TERTIARY, linewidth=0.5)
+            spine.set_color(_styles.BORDER)
+        ax.grid(True, color=_styles.BG_TERTIARY, linewidth=0.5)
 
         if self._reader is not None:
             info = self._reader.get_info()
@@ -511,9 +596,9 @@ class SummaryPanel(QWidget):
                 ax.legend(
                     loc="best",
                     fontsize=10,
-                    facecolor=BG_TERTIARY,
-                    edgecolor=BORDER,
-                    labelcolor=TEXT_PRIMARY,
+                    facecolor=_styles.BG_TERTIARY,
+                    edgecolor=_styles.BORDER,
+                    labelcolor=_styles.TEXT_PRIMARY,
                 )
                 fig.tight_layout()
 
@@ -574,4 +659,48 @@ class SummaryPanel(QWidget):
             cat_item.setHidden(not any_visible)
             if any_visible and needle:
                 cat_item.setExpanded(True)
+
+    # ------------------------------------------------------------------
+    # Theme refresh
+    # ------------------------------------------------------------------
+
+    def refresh_styles(self) -> None:
+        """Re-apply inline stylesheets using the current active theme colours."""
+        self._header.setStyleSheet(
+            f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
+            f" padding: 12px 12px 8px 12px; background-color: {_styles.BG_SECONDARY};"
+        )
+        # Toolbar widgets
+        toolbar_btns = [
+            self._btn_clear,
+            self._btn_toggle_legend,
+            self._btn_pop_out,
+            self._btn_resinsight,
+        ]
+        for btn in toolbar_btns:
+            btn.setStyleSheet(
+                f"QPushButton {{ padding: 4px 12px; border-radius: 4px;"
+                f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_SECONDARY};"
+                f" border: 1px solid {_styles.BORDER}; font-size: 12px; }}"
+                f" QPushButton:hover {{ background-color: {_styles.ACCENT};"
+                f" color: {_styles.TEXT_PRIMARY}; }}"
+                f" QPushButton:disabled {{ background-color: {_styles.BG_TERTIARY};"
+                f" color: {_styles.TEXT_MUTED}; }}"
+            )
+        self._filter_edit.setStyleSheet(
+            f"QLineEdit {{ margin: 6px 8px; padding: 6px 10px;"
+            f" border: 1px solid {_styles.BORDER}; border-radius: 6px;"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_PRIMARY}; }}"
+        )
+        self._tree.setStyleSheet(
+            f"QTreeWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
+            f" outline: none; }}"
+            f" QTreeWidget::item {{ padding: 4px 6px; }}"
+            f" QTreeWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QTreeWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
+        )
+        # Re-style the matplotlib figure and axes with the new theme colours
+        self._figure.set_facecolor(_styles.BG_PRIMARY)
+        self._style_axes()
+        self._canvas.draw_idle()
 
