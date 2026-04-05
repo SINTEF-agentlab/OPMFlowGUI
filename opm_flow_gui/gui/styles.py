@@ -6,9 +6,24 @@ other parts of the application can reference them without hard-coding hex
 strings.
 """
 
+import sys
+
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPalette
+from PySide6.QtGui import QColor, QFont, QPalette
 from PySide6.QtWidgets import QApplication
+
+# ---------------------------------------------------------------------------
+# Platform-aware font stack
+# ---------------------------------------------------------------------------
+if sys.platform == "darwin":
+    _FONT_FAMILY = '"Helvetica Neue", "Arial", sans-serif'
+    _FONT_SIZE = "13pt"
+elif sys.platform == "win32":
+    _FONT_FAMILY = '"Segoe UI", "Arial", sans-serif'
+    _FONT_SIZE = "10pt"
+else:
+    _FONT_FAMILY = '"Ubuntu", "Roboto", "Arial", sans-serif'
+    _FONT_SIZE = "10pt"
 
 # ---------------------------------------------------------------------------
 # Colour palette
@@ -37,8 +52,8 @@ QMainWindow,
 QWidget {{
     background-color: {BG_PRIMARY};
     color: {TEXT_PRIMARY};
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-    font-size: 13px;
+    font-family: {_FONT_FAMILY};
+    font-size: {_FONT_SIZE};
 }}
 
 QDialog {{
@@ -560,6 +575,17 @@ def get_status_color(status: str) -> str:
 
 def apply_style(app: QApplication) -> None:
     """Apply the dark theme stylesheet and palette to *app*."""
+    # Set a platform-appropriate system font before applying the stylesheet
+    # so that the OS default metrics are respected on macOS/Linux.
+    if sys.platform == "darwin":
+        font = QFont("Helvetica Neue", 13)
+    elif sys.platform == "win32":
+        font = QFont("Segoe UI", 10)
+    else:
+        font = app.font()
+        font.setPointSize(10)
+    app.setFont(font)
+
     app.setStyleSheet(STYLESHEET)
 
     palette = QPalette()

@@ -29,6 +29,7 @@ import matplotlib as mpl
 import matplotlib.dates as mdates
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
+from PySide6.QtGui import QBrush, QColor
 
 from opm_flow_gui.core.case_manager import SimulationRun
 from opm_flow_gui.core.summary_reader import SummaryReader
@@ -296,7 +297,7 @@ class SummaryPanel(QWidget):
             font = parent.font(0)
             font.setBold(True)
             parent.setFont(0, font)
-            parent.setForeground(0, ACCENT_LIGHT)
+            parent.setForeground(0, QBrush(QColor(ACCENT_LIGHT)))
 
             for key in keys:
                 child = QTreeWidgetItem(parent, [key])

@@ -149,6 +149,95 @@ OPM_FLOW_OPTIONS: list[dict] = [
         "default": "false",
         "description": "Perform input-only run without simulation",
     },
+    # ── Newton / nonlinear ────────────────────────────────────────────────
+    {
+        "name": "newton-min-iterations",
+        "type": "int",
+        "default": "1",
+        "description": "Minimum number of Newton iterations per time step",
+    },
+    {
+        "name": "solver-restart-factor",
+        "type": "float",
+        "default": "0.33",
+        "description": "Time-step reduction factor when the Newton solver restarts",
+    },
+    # ── Tolerances ────────────────────────────────────────────────────────
+    {
+        "name": "tolerance-mb-relaxed",
+        "type": "float",
+        "default": "1e-6",
+        "description": "Relaxed tolerance for mass balance (used after relaxation kicks in)",
+    },
+    {
+        "name": "tolerance-cnv-energy",
+        "type": "float",
+        "default": "1e-2",
+        "description": "Tolerance for energy CNV convergence criterion",
+    },
+    {
+        "name": "tolerance-pressure-ms-wells",
+        "type": "float",
+        "default": "1e4",
+        "description": "Tolerance for multisegment well pressure equations (Pa)",
+    },
+    # ── Adaptive time-stepping controls ───────────────────────────────────
+    {
+        "name": "time-step-control-growth-factor",
+        "type": "float",
+        "default": "1.25",
+        "description": "Maximum growth factor for the adaptive time-step controller",
+    },
+    {
+        "name": "time-step-control-decay-factor",
+        "type": "float",
+        "default": "0.75",
+        "description": "Decay factor applied to the time step after a convergence failure",
+    },
+    {
+        "name": "time-step-control-target-iterations",
+        "type": "int",
+        "default": "30",
+        "description": "Target total non-linear iterations for the PID time-step controller",
+    },
+    {
+        "name": "time-step-control-target-newton-iterations",
+        "type": "int",
+        "default": "8",
+        "description": "Target Newton iterations for the iteration-count time-step controller",
+    },
+    {
+        "name": "max-time-step-after-well-event-in-days",
+        "type": "float",
+        "default": "1.0",
+        "description": "Maximum time-step size (days) immediately after a well event",
+    },
+    # ── Linear solver ─────────────────────────────────────────────────────
+    {
+        "name": "linear-solver-reduction",
+        "type": "float",
+        "default": "1e-2",
+        "description": "Target relative residual reduction in the linear solver",
+    },
+    {
+        "name": "linsolver-max-iter",
+        "type": "int",
+        "default": "200",
+        "description": "Maximum number of iterations for the linear solver",
+    },
+    # ── Output ────────────────────────────────────────────────────────────
+    {
+        "name": "output-interval",
+        "type": "int",
+        "default": "1",
+        "description": "Number of report steps between two consecutive outputs",
+    },
+    {
+        "name": "enable-vtk-output",
+        "type": "bool",
+        "default": "false",
+        "description": "Write VTK-format output files in addition to Eclipse output",
+    },
 ]
 
 

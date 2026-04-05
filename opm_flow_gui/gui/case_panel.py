@@ -188,6 +188,12 @@ class CasePanel(QWidget):
     # ------------------------------------------------------------------
     def refresh(self) -> None:
         """Rebuild the list widget from the current case manager state."""
+        # Preserve the currently selected case path so we can re-select after rebuild.
+        current_item = self._list.currentItem()
+        selected_path: str | None = (
+            current_item.data(Qt.ItemDataRole.UserRole) if current_item else None
+        )
+
         self._list.clear()
         for case in self._case_manager.get_all_cases():
             widget = self._create_case_widget(case)
@@ -198,6 +204,16 @@ class CasePanel(QWidget):
 
         # Re-apply active filter
         self._filter_cases(self._filter_edit.text())
+
+        # Restore the previous selection without emitting a spurious signal.
+        if selected_path is not None:
+            for idx in range(self._list.count()):
+                item = self._list.item(idx)
+                if item is not None and item.data(Qt.ItemDataRole.UserRole) == selected_path:
+                    self._list.blockSignals(True)
+                    self._list.setCurrentItem(item)
+                    self._list.blockSignals(False)
+                    break
 
     # ------------------------------------------------------------------
     # Slot implementations
