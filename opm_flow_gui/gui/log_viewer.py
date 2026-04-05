@@ -207,6 +207,9 @@ def _parse_log(content: str) -> tuple[list[StepInfo], list[WarningEntry]]:
 class LogViewerPanel(QWidget):
     """Panel for viewing, searching and navigating PRT/DBG log files."""
 
+    # Auto-reload interval when a simulation is running (milliseconds)
+    _AUTO_RELOAD_INTERVAL_MS = 5000
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._current_run: SimulationRun | None = None
@@ -216,6 +219,11 @@ class LogViewerPanel(QWidget):
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
+
+        # Timer for auto-reloading while a run is active
+        self._auto_reload_timer = QTimer(self)
+        self._auto_reload_timer.setInterval(self._AUTO_RELOAD_INTERVAL_MS)
+        self._auto_reload_timer.timeout.connect(self._auto_reload)
 
         self._setup_ui()
         self._connect_signals()
@@ -420,6 +428,7 @@ class LogViewerPanel(QWidget):
 
     def set_run(self, run: SimulationRun | None) -> None:
         """Load log files for *run*, or clear the panel when ``None``."""
+        self._auto_reload_timer.stop()
         self._current_run = run
         self._file_combo.blockSignals(True)
         self._file_combo.clear()
@@ -456,6 +465,9 @@ class LogViewerPanel(QWidget):
             self._empty_label.setText(
                 "No PRT or DBG files found in the output directory"
             )
+            # Still start auto-reload when running so files appear as they're created
+            if run.status.value == "running":
+                self._auto_reload_timer.start()
             return
 
         self._main_widget.setVisible(True)
@@ -467,6 +479,10 @@ class LogViewerPanel(QWidget):
         self._file_combo.blockSignals(False)
 
         self._load_file(str(log_files[0]))
+
+        # Start auto-reload if the run is still active
+        if run.status.value == "running":
+            self._auto_reload_timer.start()
 
     # ------------------------------------------------------------------
     # File loading
@@ -480,9 +496,37 @@ class LogViewerPanel(QWidget):
     def _reload_current_file(self) -> None:
         path = self._file_combo.currentData()
         if path:
-            self._load_file(path)
+            self._load_file(path, preserve_position=True)
 
-    def _load_file(self, path: str) -> None:
+    def _auto_reload(self) -> None:
+        """Reload the current log file automatically (called by timer)."""
+        if self._current_run is None:
+            self._auto_reload_timer.stop()
+            return
+
+        # Stop auto-reload once the run is no longer running
+        if self._current_run.status.value != "running":
+            self._auto_reload_timer.stop()
+            # Do a final reload to capture the complete output
+            path = self._file_combo.currentData()
+            if path:
+                self._load_file(path, preserve_position=True)
+            return
+
+        path = self._file_combo.currentData()
+        if path:
+            self._load_file(path, preserve_position=True)
+
+    def _load_file(self, path: str, preserve_position: bool = False) -> None:
+        # Capture scroll position before loading if requested
+        scrollbar = self._text_view.verticalScrollBar()
+        if preserve_position:
+            saved_pos: int | None = scrollbar.value()
+            at_bottom = saved_pos >= scrollbar.maximum()
+        else:
+            saved_pos = None
+            at_bottom = False
+
         try:
             content = Path(path).read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
@@ -497,6 +541,14 @@ class LogViewerPanel(QWidget):
         self._populate_steps()
         self._populate_warnings()
         self._apply_search()
+
+        # Restore scroll position
+        if preserve_position:
+            if at_bottom:
+                # If we were at the bottom, follow new content
+                scrollbar.setValue(scrollbar.maximum())
+            elif saved_pos is not None:
+                scrollbar.setValue(min(saved_pos, scrollbar.maximum()))
 
     # ------------------------------------------------------------------
     # Step navigation

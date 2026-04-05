@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFileDialog,
@@ -30,6 +31,7 @@ from opm_flow_gui.gui.styles import (
     BORDER,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
+    THEMES,
 )
 
 
@@ -41,7 +43,7 @@ class SettingsDialog(QDialog):
         self._config = config
 
         self.setWindowTitle("Settings")
-        self.setMinimumSize(550, 450)
+        self.setMinimumSize(580, 560)
 
         self._setup_ui()
 
@@ -61,6 +63,9 @@ class SettingsDialog(QDialog):
         )
         root.addWidget(header)
 
+        # ---- appearance group ----
+        root.addWidget(self._build_appearance_group())
+
         # ---- paths group ----
         root.addWidget(self._build_paths_group())
 
@@ -79,6 +84,30 @@ class SettingsDialog(QDialog):
     # ------------------------------------------------------------------
     # Group builders
     # ------------------------------------------------------------------
+    def _build_appearance_group(self) -> QGroupBox:
+        group = QGroupBox("Appearance")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(12, 16, 12, 12)
+        layout.setSpacing(10)
+
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        lbl = QLabel("Colour Theme:")
+        lbl.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-weight: 600; background: transparent;"
+        )
+        row.addWidget(lbl)
+
+        self._theme_combo = QComboBox()
+        self._theme_combo.addItems(list(THEMES.keys()))
+        self._theme_combo.setCurrentText(self._config.theme)
+        self._theme_combo.setToolTip("Change the application colour theme")
+        row.addWidget(self._theme_combo, 1)
+        row.addStretch()
+
+        layout.addLayout(row)
+        return group
+
     def _build_paths_group(self) -> QGroupBox:
         group = QGroupBox("Paths")
         layout = QVBoxLayout(group)
@@ -219,6 +248,7 @@ class SettingsDialog(QDialog):
             output_base_path=self._edit_output.text().strip(),
             search_directories=dirs,
             case_files=list(self._config.case_files),
+            theme=self._theme_combo.currentText(),
         )
 
     # ------------------------------------------------------------------

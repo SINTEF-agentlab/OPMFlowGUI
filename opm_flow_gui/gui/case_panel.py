@@ -130,7 +130,7 @@ class CasePanel(QWidget):
     ) -> None:
         super().__init__(parent)
         self._case_manager = case_manager
-        self.setMinimumWidth(180)
+        self.setMinimumWidth(220)
         self._setup_ui()
         self._connect_signals()
         self.refresh()
