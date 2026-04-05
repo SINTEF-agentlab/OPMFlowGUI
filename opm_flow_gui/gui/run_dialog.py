@@ -12,7 +12,8 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QDoubleValidator
+from PySide6.QtCore import QRegularExpression
+from PySide6.QtGui import QRegularExpressionValidator
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -248,8 +249,10 @@ class RunDialog(QDialog):
                 except ValueError:
                     formatted = default
                 line = QLineEdit(formatted)
-                validator = QDoubleValidator()
-                validator.setNotation(QDoubleValidator.Notation.ScientificNotation)
+                # Accept both standard decimal and scientific notation input.
+                validator = QRegularExpressionValidator(
+                    QRegularExpression(r"^-?[0-9]*\.?[0-9]*([eE][-+]?[0-9]*)?$")
+                )
                 line.setValidator(validator)
                 widget = line
 

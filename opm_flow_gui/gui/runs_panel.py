@@ -40,14 +40,24 @@ def _format_elapsed(started_at: str, finished_at: str | None = None) -> str:
     """Return a human-readable elapsed-time string between two ISO timestamps.
 
     If *finished_at* is ``None`` the elapsed time up to *now* is returned.
+    Both timestamps are treated as local/naive time; any trailing timezone
+    offset is stripped before parsing.
     """
     try:
-        fmt = "%Y-%m-%dT%H:%M:%S.%f" if "." in started_at else "%Y-%m-%dT%H:%M:%S"
-        start = datetime.strptime(started_at[:26], fmt)
+        # Strip optional timezone suffix (e.g. "+00:00" or "Z") so that
+        # parsing is always timezone-naive and consistent with datetime.now().
+        def _strip_tz(ts: str) -> str:
+            for sep in ("+", "Z"):
+                idx = ts.find(sep, 10)  # avoid matching sign in time portion
+                if idx != -1:
+                    ts = ts[:idx]
+            return ts[:26]
+
+        fmt_s = "%Y-%m-%dT%H:%M:%S.%f" if "." in started_at else "%Y-%m-%dT%H:%M:%S"
+        start = datetime.strptime(_strip_tz(started_at), fmt_s)
         if finished_at:
-            end_str = finished_at
-            fmt2 = "%Y-%m-%dT%H:%M:%S.%f" if "." in end_str else "%Y-%m-%dT%H:%M:%S"
-            end = datetime.strptime(end_str[:26], fmt2)
+            fmt_e = "%Y-%m-%dT%H:%M:%S.%f" if "." in finished_at else "%Y-%m-%dT%H:%M:%S"
+            end = datetime.strptime(_strip_tz(finished_at), fmt_e)
         else:
             end = datetime.now()
         delta = int((end - start).total_seconds())
@@ -167,7 +177,6 @@ class RunItemWidget(QWidget):
         self._progress_bar.setValue(int(progress))
         if progress > 0:
             self._progress_bar.setVisible(True)
-        self._run.progress = progress
         self._refresh_tooltip()
 
     def set_status(self, status: str) -> None:
