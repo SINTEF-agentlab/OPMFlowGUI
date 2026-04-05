@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QResizeEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -49,7 +49,7 @@ class _ElidingLabel(QLabel):
         self._full_text = text
         self._update_elided()
 
-    def resizeEvent(self, event) -> None:  # noqa: N802
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._update_elided()
 

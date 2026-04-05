@@ -360,7 +360,7 @@ class LogViewerPanel(QWidget):
         root.addWidget(bottom_splitter, 1)
 
         # --- empty state ---
-        self._empty_label = QLabel("Select a completed run to view log files")
+        self._empty_label = QLabel("Select a run to view log files")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setStyleSheet(
             f"color: {TEXT_MUTED}; font-size: 14px; background: transparent;"
@@ -600,7 +600,7 @@ class LogViewerPanel(QWidget):
     def _show_empty_state(self) -> None:
         self._main_widget.setVisible(False)
         self._empty_label.setVisible(True)
-        self._empty_label.setText("Select a completed run to view log files")
+        self._empty_label.setText("Select a run to view log files")
 
 
 # ---------------------------------------------------------------------------
@@ -616,6 +616,7 @@ def _separator() -> QWidget:
 
 
 def _monospace_font():
+    """Return a platform-appropriate monospace QFont for log display."""
     from PySide6.QtGui import QFont
     import sys
     if sys.platform == "darwin":

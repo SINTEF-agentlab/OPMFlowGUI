@@ -443,10 +443,10 @@ class SummaryPanel(QWidget):
         """Launch ResInsight with the current run's output directory."""
         if self._current_run is None:
             return
-        out_dir = self._current_run.output_dir
+        out_dir = Path(self._current_run.output_dir).resolve()
         binary = self._resinsight_binary or "ResInsight"
         try:
-            subprocess.Popen([binary, out_dir])  # noqa: S603
+            subprocess.Popen([binary, str(out_dir)])  # noqa: S603
         except FileNotFoundError:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(
