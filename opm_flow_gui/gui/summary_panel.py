@@ -39,6 +39,7 @@ from PySide6.QtGui import QBrush, QColor
 from opm_flow_gui.core.case_manager import SimulationRun
 from opm_flow_gui.core.summary_reader import SummaryReader
 from opm_flow_gui.gui.log_viewer import LogViewerPanel
+from opm_flow_gui.gui.system_monitor import SystemMonitorPanel
 from opm_flow_gui.gui.styles import (
     ACCENT,
     ACCENT_HOVER,
@@ -86,7 +87,6 @@ class SummaryPanel(QWidget):
 
         self._setup_ui()
         self._connect_signals()
-        self._show_empty_state()
 
     # ------------------------------------------------------------------
     # Public API
@@ -120,15 +120,9 @@ class SummaryPanel(QWidget):
         )
         self._tabs.addTab(self._build_summary_tab(), "Summary")
         self._tabs.addTab(self._build_log_tab(), "Log Files")
+        self._tabs.addTab(self._build_monitor_tab(), "System Monitor")
+        self._tabs.currentChanged.connect(self._on_tab_changed)
         root.addWidget(self._tabs, 1)
-
-        # --- empty-state overlay ---
-        self._empty_label = QLabel("Select a completed run to view results")
-        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 14px; background: transparent;"
-        )
-        root.addWidget(self._empty_label, 1)
 
     def _build_summary_tab(self) -> QWidget:
         """Build the summary plot tab."""
@@ -232,6 +226,11 @@ class SummaryPanel(QWidget):
         self._log_viewer = LogViewerPanel()
         return self._log_viewer
 
+    def _build_monitor_tab(self) -> QWidget:
+        """Build the system resource monitor tab."""
+        self._system_monitor = SystemMonitorPanel()
+        return self._system_monitor
+
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
@@ -281,6 +280,14 @@ class SummaryPanel(QWidget):
         self._btn_pop_out.clicked.connect(self._pop_out_plot)
         self._btn_resinsight.clicked.connect(self._launch_resinsight)
 
+    def _on_tab_changed(self, index: int) -> None:
+        """Start/stop system monitor timer based on tab visibility."""
+        monitor_index = self._tabs.indexOf(self._system_monitor)
+        if index == monitor_index:
+            self._system_monitor.start()
+        else:
+            self._system_monitor.stop()
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -296,22 +303,12 @@ class SummaryPanel(QWidget):
         if run is None:
             self._reader = None
             self._log_viewer.set_run(None)
-            self._show_empty_state()
             return
 
         self._log_viewer.set_run(run)
 
         if self._load_summary(run.output_dir):
             self._populate_tree()
-            self._tabs.setVisible(True)
-            self._empty_label.setVisible(False)
-        else:
-            self._reader = None
-            self._show_empty_state()
-            self._empty_label.setText("No summary data available for this run")
-            # Still show tabs (log viewer may have files even without summary)
-            self._tabs.setVisible(True)
-            self._empty_label.setVisible(False)
 
     # ------------------------------------------------------------------
     # Data loading
@@ -578,12 +575,3 @@ class SummaryPanel(QWidget):
             if any_visible and needle:
                 cat_item.setExpanded(True)
 
-    # ------------------------------------------------------------------
-    # Empty state
-    # ------------------------------------------------------------------
-
-    def _show_empty_state(self) -> None:
-        """Display the empty-state message and hide content widgets."""
-        self._tabs.setVisible(False)
-        self._empty_label.setVisible(True)
-        self._empty_label.setText("Select a completed run to view results")

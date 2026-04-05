@@ -22,6 +22,7 @@ class Config:
     output_base_path: str = ""
     search_directories: list[str] = field(default_factory=list)
     case_files: list[str] = field(default_factory=list)
+    theme: str = "Dark Purple"
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -31,6 +32,7 @@ class Config:
             "output_base_path": self.output_base_path,
             "search_directories": list(self.search_directories),
             "case_files": list(self.case_files),
+            "theme": self.theme,
         }
 
     @classmethod
@@ -42,6 +44,7 @@ class Config:
             output_base_path=str(data.get("output_base_path", "")),
             search_directories=[str(d) for d in data.get("search_directories", [])],
             case_files=[str(f) for f in data.get("case_files", [])],
+            theme=str(data.get("theme", "Dark Purple")),
         )
 
 

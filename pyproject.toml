@@ -16,6 +16,7 @@ dependencies = [
     "PySide6>=6.5",
     "matplotlib>=3.7",
     "resdata>=4.0",
+    "psutil>=5.9",
 ]
 
 [project.scripts]

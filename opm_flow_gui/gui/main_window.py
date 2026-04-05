@@ -11,13 +11,10 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
-    QComboBox,
-    QLabel,
     QMainWindow,
     QMessageBox,
     QSplitter,
     QWidget,
-    QWidgetAction,
 )
 
 from opm_flow_gui.core.case_manager import (
@@ -31,7 +28,7 @@ from opm_flow_gui.gui.case_panel import CasePanel
 from opm_flow_gui.gui.run_dialog import RunDialog
 from opm_flow_gui.gui.runs_panel import RunsPanel
 from opm_flow_gui.gui.settings_dialog import SettingsDialog
-from opm_flow_gui.gui.styles import STYLESHEET, THEMES, DEFAULT_THEME, apply_theme
+from opm_flow_gui.gui.styles import STYLESHEET, apply_theme
 from opm_flow_gui.gui.summary_panel import SummaryPanel
 
 logger = logging.getLogger(__name__)
@@ -84,6 +81,11 @@ class MainWindow(QMainWindow):
         self._summary_panel = SummaryPanel()
         self._summary_panel.set_resinsight_binary(config.resinsight_binary)
 
+        # Apply saved theme
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, config.theme)
+
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._case_panel)
         splitter.addWidget(self._runs_panel)
@@ -91,10 +93,10 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 3)
-        splitter.setSizes([240, 260, 700])
+        splitter.setSizes([260, 280, 700])
         splitter.setCollapsible(0, True)
         self._splitter = splitter
-        self._cases_panel_width: int = 240  # track last expanded width
+        self._cases_panel_width: int = 260  # track last expanded width
 
         container = QWidget()
         container.setLayout(_hbox(self._splitter))
@@ -140,7 +142,7 @@ class MainWindow(QMainWindow):
 
         file_menu.addSeparator()
 
-        settings_action = QAction("Se&ttings…", self)
+        settings_action = QAction("&Preferences…", self)
         settings_action.setShortcut(QKeySequence("Ctrl+,"))
         settings_action.triggered.connect(self._open_settings)
         file_menu.addAction(settings_action)
@@ -158,23 +160,6 @@ class MainWindow(QMainWindow):
         about_action = QAction("&About", self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
-
-        # -- Theme selector (right-aligned in menu bar) -----------------------
-        theme_label = QLabel("  Theme: ")
-        theme_label.setStyleSheet("color: #94a3b8; background: transparent;")
-        label_action = QWidgetAction(self)
-        label_action.setDefaultWidget(theme_label)
-        menu_bar.addAction(label_action)
-
-        self._theme_combo = QComboBox()
-        self._theme_combo.addItems(list(THEMES.keys()))
-        self._theme_combo.setCurrentText(DEFAULT_THEME)
-        self._theme_combo.setToolTip("Change the application colour theme")
-        self._theme_combo.setFixedWidth(160)
-        self._theme_combo.currentTextChanged.connect(self._on_theme_changed)
-        theme_action = QWidgetAction(self)
-        theme_action.setDefaultWidget(self._theme_combo)
-        menu_bar.addAction(theme_action)
 
     # --------------------------------------------------------------------- #
     # Slots – Panel interaction                                               #
@@ -380,6 +365,11 @@ class MainWindow(QMainWindow):
         # Update ResInsight binary in summary panel
         self._summary_panel.set_resinsight_binary(new_config.resinsight_binary)
 
+        # Apply the selected theme
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, new_config.theme)
+
         # Re-discover cases from updated search directories
         for search_dir in new_config.search_directories:
             try:
@@ -401,12 +391,6 @@ class MainWindow(QMainWindow):
             "<p>Built with PySide6 and matplotlib.</p>",
         )
 
-    def _on_theme_changed(self, theme_name: str) -> None:
-        """Switch the application colour theme."""
-        app = QApplication.instance()
-        if isinstance(app, QApplication):
-            apply_theme(app, theme_name)
-
     def _collapse_cases_panel(self, _run_id: str = "") -> None:
         """Collapse the cases panel when a run is selected."""
         sizes = self._splitter.sizes()
@@ -420,7 +404,7 @@ class MainWindow(QMainWindow):
         """Re-expand the cases panel."""
         sizes = self._splitter.sizes()
         if sizes[0] == 0:
-            restore = self._cases_panel_width or 240
+            restore = self._cases_panel_width or 260
             sizes[1] = max(0, sizes[1] - restore)
             sizes[0] = restore
             self._splitter.setSizes(sizes)
