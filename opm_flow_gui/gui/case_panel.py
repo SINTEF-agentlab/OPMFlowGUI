@@ -150,6 +150,9 @@ class CasePanel(QWidget):
             f" padding: 12px 12px 8px 12px; background-color: {BG_SECONDARY};"
             " cursor: pointer;"
         )
+        self._header.setAccessibleDescription(
+            "Cases panel header – click to expand the panel when it is collapsed"
+        )
         self._header.clicked.connect(self.expand_requested)
         layout.addWidget(self._header)
 

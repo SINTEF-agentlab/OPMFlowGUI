@@ -404,8 +404,8 @@ class MainWindow(QMainWindow):
     def _on_theme_changed(self, theme_name: str) -> None:
         """Switch the application colour theme."""
         app = QApplication.instance()
-        if app is not None:
-            apply_theme(app, theme_name)  # type: ignore[arg-type]
+        if isinstance(app, QApplication):
+            apply_theme(app, theme_name)
 
     def _collapse_cases_panel(self, _run_id: str = "") -> None:
         """Collapse the cases panel when a run is selected."""

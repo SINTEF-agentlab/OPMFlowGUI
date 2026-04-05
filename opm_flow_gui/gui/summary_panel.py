@@ -466,7 +466,12 @@ class SummaryPanel(QWidget):
             return
 
         dlg = QDialog(self)
-        dlg.setWindowTitle("Plot – " + ", ".join(self._plotted_keys))
+        # Limit title length when many keys are plotted
+        if len(self._plotted_keys) > 3:
+            key_str = ", ".join(self._plotted_keys[:3]) + f"… (+{len(self._plotted_keys) - 3})"
+        else:
+            key_str = ", ".join(self._plotted_keys)
+        dlg.setWindowTitle("Plot – " + key_str)
         dlg.resize(800, 500)
 
         layout = QVBoxLayout(dlg)
