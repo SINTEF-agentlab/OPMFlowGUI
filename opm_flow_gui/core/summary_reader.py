@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 try:
     from resdata.summary import Summary
@@ -12,7 +15,7 @@ try:
     _HAS_RESDATA = True
 except ImportError:  # pragma: no cover
     _HAS_RESDATA = False
-    print("Warning: resdata is not installed. Summary reading is disabled.")
+    logger.warning("resdata is not installed. Summary reading is disabled.")
 
 _KEY_CATEGORIES: dict[str, str] = {
     "F": "Field",
@@ -71,6 +74,7 @@ class SummaryReader:
         try:
             self._summary = Summary(self._case_path)
         except Exception:  # noqa: BLE001
+            logger.exception("Failed to load summary from %s", self._case_path)
             return False
         return True
 
