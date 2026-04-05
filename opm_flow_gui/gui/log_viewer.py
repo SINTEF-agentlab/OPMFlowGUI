@@ -520,10 +520,12 @@ class LogViewerPanel(QWidget):
     def _load_file(self, path: str, preserve_position: bool = False) -> None:
         # Capture scroll position before loading if requested
         scrollbar = self._text_view.verticalScrollBar()
-        saved_pos = scrollbar.value() if preserve_position else None
-        at_bottom = preserve_position and (
-            saved_pos == scrollbar.maximum() or scrollbar.maximum() == 0
-        )
+        if preserve_position:
+            saved_pos: int | None = scrollbar.value()
+            at_bottom = saved_pos >= scrollbar.maximum()
+        else:
+            saved_pos = None
+            at_bottom = False
 
         try:
             content = Path(path).read_text(encoding="utf-8", errors="replace")

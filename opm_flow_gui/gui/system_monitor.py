@@ -334,7 +334,10 @@ class SystemMonitorPanel(QWidget):
             for proc in psutil.process_iter(["pid", "name", "cpu_percent", "memory_info", "status"]):
                 try:
                     name = (proc.info.get("name") or "").lower()
-                    if "flow" in name:
+                    # Match the OPM Flow binary (typically "flow") precisely:
+                    # exact match, or suffixes like "flow_mpifarm".
+                    # Avoid false positives like "workflow" or "overflow".
+                    if name == "flow" or name.startswith("flow_") or name == "opm-flow":
                         mem_info = proc.info.get("memory_info")
                         mem_mb = mem_info.rss / (1024 ** 2) if mem_info else 0.0
                         flow_procs.append({
