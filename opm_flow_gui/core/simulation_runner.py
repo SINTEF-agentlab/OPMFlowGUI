@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QProcess, Signal
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .case_manager import SimulationRun
@@ -266,6 +269,11 @@ class SimulationRunner(QObject):
 
         process.start(program, arguments)
         if not process.waitForStarted(5000):
+            logger.error(
+                "Failed to start process for run %s: %s",
+                run_id,
+                process.errorString(),
+            )
             self._processes.pop(run_id, None)
             return False
 

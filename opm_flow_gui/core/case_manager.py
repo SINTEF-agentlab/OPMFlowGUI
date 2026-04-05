@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class RunStatus(Enum):
@@ -53,16 +56,16 @@ class SimulationRun:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> SimulationRun:
         return cls(
-            case_path=data.get("case_path", ""),
-            output_dir=data.get("output_dir", ""),
-            run_id=data.get("run_id", str(uuid.uuid4())),
+            case_path=str(data.get("case_path", "")),
+            output_dir=str(data.get("output_dir", "")),
+            run_id=str(data.get("run_id", str(uuid.uuid4()))),
             status=RunStatus(data.get("status", "pending")),
-            created_at=data.get("created_at", ""),
+            created_at=str(data.get("created_at", "")),
             started_at=data.get("started_at"),
             finished_at=data.get("finished_at"),
             flow_options=dict(data.get("flow_options", {})),
-            mpi_processes=data.get("mpi_processes", 1),
-            progress=data.get("progress", 0.0),
+            mpi_processes=int(data.get("mpi_processes", 1)),
+            progress=float(data.get("progress", 0.0)),
             pid=data.get("pid"),
         )
 
@@ -112,6 +115,8 @@ class CaseManager:
         self.cases: dict[str, Case] = {}
 
     def add_case(self, data_file_path: str) -> Case:
+        if not data_file_path or not data_file_path.strip():
+            raise ValueError("data_file_path cannot be empty")
         resolved = str(Path(data_file_path).resolve())
         if resolved not in self.cases:
             self.cases[resolved] = Case(data_file_path=resolved)
@@ -122,8 +127,12 @@ class CaseManager:
         self.cases.pop(resolved, None)
 
     def discover_cases(self, directory: str) -> list[Case]:
+        dir_path = Path(directory)
+        if not dir_path.is_dir():
+            logger.warning("Not a valid directory: %s", directory)
+            return []
         discovered: list[Case] = []
-        for path in sorted(Path(directory).rglob("*.DATA")):
+        for path in sorted(dir_path.rglob("*.DATA")):
             case = self.add_case(str(path))
             discovered.append(case)
         return discovered
@@ -133,12 +142,15 @@ class CaseManager:
 
     def save(self, filepath: str) -> None:
         path = Path(filepath)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        data = {"cases": [c.to_dict() for c in self.get_all_cases()]}
-        path.write_text(
-            json.dumps(data, indent=2) + "\n",
-            encoding="utf-8",
-        )
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            data = {"cases": [c.to_dict() for c in self.get_all_cases()]}
+            path.write_text(
+                json.dumps(data, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            logger.exception("Failed to save cases to %s", filepath)
 
     def load(self, filepath: str) -> None:
         path = Path(filepath)
@@ -147,6 +159,7 @@ class CaseManager:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, ValueError):
+            logger.warning("Malformed cases file %s – ignoring.", filepath)
             return
         self.cases.clear()
         for case_data in data.get("cases", []):

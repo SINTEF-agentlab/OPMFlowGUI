@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG_DIR = Path.home() / ".opm_flow_gui"
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_DIR / "config.json"
@@ -31,11 +34,11 @@ class Config:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Config:
         return cls(
-            flow_binary=data.get("flow_binary", "flow"),
-            mpirun_binary=data.get("mpirun_binary", "mpirun"),
-            output_base_path=data.get("output_base_path", ""),
-            search_directories=list(data.get("search_directories", [])),
-            case_files=list(data.get("case_files", [])),
+            flow_binary=str(data.get("flow_binary", "flow")),
+            mpirun_binary=str(data.get("mpirun_binary", "mpirun")),
+            output_base_path=str(data.get("output_base_path", "")),
+            search_directories=[str(d) for d in data.get("search_directories", [])],
+            case_files=[str(f) for f in data.get("case_files", [])],
         )
 
 
@@ -54,6 +57,7 @@ class ConfigManager:
             try:
                 data = json.loads(self._path.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, ValueError):
+                logger.warning("Malformed config file %s – using defaults.", self._path)
                 self._config = Config()
                 return
             self._config = Config.from_dict(data)
@@ -62,8 +66,11 @@ class ConfigManager:
             self.save()
 
     def save(self) -> None:
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        self._path.write_text(
-            json.dumps(self._config.to_dict(), indent=2) + "\n",
-            encoding="utf-8",
-        )
+        try:
+            self._path.parent.mkdir(parents=True, exist_ok=True)
+            self._path.write_text(
+                json.dumps(self._config.to_dict(), indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            logger.exception("Failed to save config to %s", self._path)
