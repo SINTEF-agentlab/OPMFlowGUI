@@ -110,6 +110,16 @@ class RunDialog(QDialog):
         layout.setSpacing(12)
         layout.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
+        # Run name
+        self._edit_name = QLineEdit()
+        self._edit_name.setPlaceholderText("Optional label for this run…")
+        self._edit_name.setToolTip("A short descriptive name for this simulation run")
+        name_label = QLabel("Run Name:")
+        name_label.setStyleSheet(
+            f"color: {TEXT_SECONDARY}; font-weight: 600; background: transparent;"
+        )
+        layout.addRow(name_label, self._edit_name)
+
         # MPI processes
         self._spin_mpi = QSpinBox()
         self._spin_mpi.setRange(1, 1024)
@@ -281,6 +291,10 @@ class RunDialog(QDialog):
     # ------------------------------------------------------------------
     # Public getters
     # ------------------------------------------------------------------
+    def get_name(self) -> str:
+        """Return the run name entered by the user."""
+        return self._edit_name.text().strip()
+
     def get_options(self) -> dict[str, str]:
         """Return a dict of option values that differ from their defaults."""
         changed: dict[str, str] = {}
