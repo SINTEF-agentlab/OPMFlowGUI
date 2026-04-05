@@ -38,6 +38,7 @@ class SimulationRun:
     progress: float = 0.0
     pid: int | None = None
     notes: str = ""
+    name: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -53,6 +54,7 @@ class SimulationRun:
             "progress": self.progress,
             "pid": self.pid,
             "notes": self.notes,
+            "name": self.name,
         }
 
     @classmethod
@@ -70,6 +72,7 @@ class SimulationRun:
             progress=float(data.get("progress", 0.0)),
             pid=data.get("pid"),
             notes=str(data.get("notes", "")),
+            name=str(data.get("name", "")),
         )
 
 

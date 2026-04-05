@@ -97,7 +97,9 @@ class RunItemWidget(QWidget):
         short_id = run.run_id[:8]
         created = run.created_at[:19].replace("T", " ")
 
-        id_label = QLabel(f"\u25b6 {short_id}")
+        # If a human-readable name was set, display it; otherwise fall back to short ID
+        display_name = run.name if run.name else f"\u25b6 {short_id}"
+        id_label = QLabel(display_name)
         id_label.setStyleSheet(
             f"font-weight: bold; font-size: 13px; color: {TEXT_PRIMARY};"
             " background: transparent;"

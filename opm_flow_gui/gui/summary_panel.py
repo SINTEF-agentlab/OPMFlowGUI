@@ -16,6 +16,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
+    QDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -145,6 +146,9 @@ class SummaryPanel(QWidget):
 
         self._btn_clear = self._make_toolbar_button("Clear Plot")
         self._btn_toggle_legend = self._make_toolbar_button("Toggle Legend")
+        self._btn_pop_out = self._make_toolbar_button("\u2197 Pop Out")
+        self._btn_pop_out.setToolTip("Open the current plot in a separate window")
+        self._btn_pop_out.setEnabled(False)
         self._chk_overlay = QCheckBox("Overlay multiple vectors")
         self._chk_overlay.setStyleSheet(
             f"QCheckBox {{ color: {TEXT_SECONDARY}; font-size: 12px;"
@@ -160,6 +164,7 @@ class SummaryPanel(QWidget):
 
         tb_layout.addWidget(self._btn_clear)
         tb_layout.addWidget(self._btn_toggle_legend)
+        tb_layout.addWidget(self._btn_pop_out)
         tb_layout.addStretch()
         tb_layout.addWidget(self._chk_overlay)
         tb_layout.addWidget(self._btn_resinsight)
@@ -269,9 +274,11 @@ class SummaryPanel(QWidget):
 
     def _connect_signals(self) -> None:
         self._tree.itemClicked.connect(self._on_key_selected)
+        self._tree.currentItemChanged.connect(self._on_current_item_changed)
         self._filter_edit.textChanged.connect(self._filter_keys)
         self._btn_clear.clicked.connect(self._clear_plot)
         self._btn_toggle_legend.clicked.connect(self._toggle_legend)
+        self._btn_pop_out.clicked.connect(self._pop_out_plot)
         self._btn_resinsight.clicked.connect(self._launch_resinsight)
 
     # ------------------------------------------------------------------
@@ -284,6 +291,7 @@ class SummaryPanel(QWidget):
         self._clear_plot()
         self._tree.clear()
         self._btn_resinsight.setEnabled(run is not None)
+        self._btn_pop_out.setEnabled(False)
 
         if run is None:
             self._reader = None
@@ -359,6 +367,17 @@ class SummaryPanel(QWidget):
             return
         self._plot_vector(key)
 
+    def _on_current_item_changed(
+        self, current: QTreeWidgetItem | None, _previous: QTreeWidgetItem | None
+    ) -> None:
+        """Plot the vector for the newly focused tree item (keyboard navigation)."""
+        if current is None:
+            return
+        key = current.data(0, Qt.ItemDataRole.UserRole)
+        if key is None:
+            return
+        self._plot_vector(key)
+
     def _plot_vector(self, key: str) -> None:
         """Plot a single summary vector on the canvas."""
         if self._reader is None:
@@ -418,6 +437,7 @@ class SummaryPanel(QWidget):
 
         self._figure.tight_layout()
         self._canvas.draw_idle()
+        self._btn_pop_out.setEnabled(True)
 
     def _clear_plot(self) -> None:
         """Clear the matplotlib figure."""
@@ -426,6 +446,7 @@ class SummaryPanel(QWidget):
         self._plotted_keys.clear()
         self._color_index = 0
         self._canvas.draw_idle()
+        self._btn_pop_out.setEnabled(False)
 
     def _toggle_legend(self) -> None:
         """Toggle legend visibility and redraw."""
@@ -436,17 +457,94 @@ class SummaryPanel(QWidget):
         self._canvas.draw_idle()
 
     # ------------------------------------------------------------------
+    # Pop-out plot
+    # ------------------------------------------------------------------
+
+    def _pop_out_plot(self) -> None:
+        """Open the current plot in a detached dialog window."""
+        if not self._plotted_keys:
+            return
+
+        dlg = QDialog(self)
+        # Limit title length when many keys are plotted
+        if len(self._plotted_keys) > 3:
+            key_str = ", ".join(self._plotted_keys[:3]) + f"… (+{len(self._plotted_keys) - 3})"
+        else:
+            key_str = ", ".join(self._plotted_keys)
+        dlg.setWindowTitle("Plot – " + key_str)
+        dlg.resize(800, 500)
+
+        layout = QVBoxLayout(dlg)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        fig = Figure(facecolor=BG_PRIMARY)
+        canvas = FigureCanvasQTAgg(fig)
+        ax = fig.add_subplot(111)
+
+        # Copy current axes content to the new figure
+        ax.set_facecolor(BG_SECONDARY)
+        ax.tick_params(colors=TEXT_SECONDARY, which="both")
+        ax.xaxis.label.set_color(TEXT_SECONDARY)
+        ax.yaxis.label.set_color(TEXT_SECONDARY)
+        ax.title.set_color(TEXT_PRIMARY)
+        for spine in ax.spines.values():
+            spine.set_color(BORDER)
+        ax.grid(True, color=BG_TERTIARY, linewidth=0.5)
+
+        if self._reader is not None:
+            info = self._reader.get_info()
+            for i, key in enumerate(self._plotted_keys):
+                vector = self._reader.get_vector(key)
+                if vector is None:
+                    continue
+                dates, values = vector
+                color = _PLOT_COLORS[i % len(_PLOT_COLORS)]
+                ax.plot(dates, values, color=color, linewidth=1.5, label=key)
+
+            if self._plotted_keys:
+                ax.set_title(
+                    ", ".join(self._plotted_keys), fontsize=13, fontweight="bold"
+                )
+                ax.set_xlabel("Date", fontsize=11)
+                unit = info.units.get(self._plotted_keys[0], "") if info else ""
+                ax.set_ylabel(unit or "Value", fontsize=11)
+                ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+                ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+                fig.autofmt_xdate(rotation=30)
+                ax.legend(
+                    loc="best",
+                    fontsize=10,
+                    facecolor=BG_TERTIARY,
+                    edgecolor=BORDER,
+                    labelcolor=TEXT_PRIMARY,
+                )
+                fig.tight_layout()
+
+        layout.addWidget(canvas)
+        dlg.show()
+
+    # ------------------------------------------------------------------
     # ResInsight
     # ------------------------------------------------------------------
 
     def _launch_resinsight(self) -> None:
-        """Launch ResInsight with the current run's output directory."""
+        """Launch ResInsight with the current run's output files."""
         if self._current_run is None:
             return
         out_dir = Path(self._current_run.output_dir).resolve()
         binary = self._resinsight_binary or "ResInsight"
+
+        # Prefer an EGRID file; fall back to SMSPEC; lastly open ResInsight with no file.
+        egrid_files = sorted(out_dir.glob("*.EGRID"))
+        smspec_files = sorted(out_dir.glob("*.SMSPEC"))
+        case_file = (egrid_files or smspec_files or [None])[0]
+
+        args: list[str] = [binary]
+        if case_file is not None:
+            args += ["--case", str(case_file)]
+
         try:
-            subprocess.Popen([binary, str(out_dir)])  # noqa: S603
+            subprocess.Popen(args)  # noqa: S603
         except FileNotFoundError:
             from PySide6.QtWidgets import QMessageBox
             QMessageBox.warning(

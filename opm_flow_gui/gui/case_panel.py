@@ -11,7 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QResizeEvent
+from PySide6.QtGui import QDesktopServices, QMouseEvent, QResizeEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -35,6 +35,16 @@ from opm_flow_gui.gui.styles import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+
+
+class _ClickableHeader(QLabel):
+    """QLabel that emits a ``clicked`` signal on mouse press."""
+
+    clicked = Signal()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        super().mousePressEvent(event)
+        self.clicked.emit()
 
 
 class _ElidingLabel(QLabel):
@@ -111,6 +121,7 @@ class CasePanel(QWidget):
     """Left panel displaying the list of loaded simulation cases."""
 
     case_selected = Signal(str)
+    expand_requested = Signal()  # emitted when the collapsed header is clicked
 
     def __init__(
         self,
@@ -132,13 +143,18 @@ class CasePanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        # --- header ---
-        header = QLabel("Cases")
-        header.setStyleSheet(
+        # --- header (click to expand when collapsed) ---
+        self._header = _ClickableHeader("Cases ▶")
+        self._header.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {TEXT_PRIMARY};"
             f" padding: 12px 12px 8px 12px; background-color: {BG_SECONDARY};"
+            " cursor: pointer;"
         )
-        layout.addWidget(header)
+        self._header.setAccessibleDescription(
+            "Cases panel header – click to expand the panel when it is collapsed"
+        )
+        self._header.clicked.connect(self.expand_requested)
+        layout.addWidget(self._header)
 
         # --- search / filter ---
         self._filter_edit = QLineEdit()

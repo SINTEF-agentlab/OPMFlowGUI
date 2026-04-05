@@ -10,10 +10,14 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QLabel,
     QMainWindow,
     QMessageBox,
     QSplitter,
     QWidget,
+    QWidgetAction,
 )
 
 from opm_flow_gui.core.case_manager import (
@@ -27,7 +31,7 @@ from opm_flow_gui.gui.case_panel import CasePanel
 from opm_flow_gui.gui.run_dialog import RunDialog
 from opm_flow_gui.gui.runs_panel import RunsPanel
 from opm_flow_gui.gui.settings_dialog import SettingsDialog
-from opm_flow_gui.gui.styles import STYLESHEET
+from opm_flow_gui.gui.styles import STYLESHEET, THEMES, DEFAULT_THEME, apply_theme
 from opm_flow_gui.gui.summary_panel import SummaryPanel
 
 logger = logging.getLogger(__name__)
@@ -88,9 +92,12 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 3)
         splitter.setSizes([240, 260, 700])
+        splitter.setCollapsible(0, True)
+        self._splitter = splitter
+        self._cases_panel_width: int = 240  # track last expanded width
 
         container = QWidget()
-        container.setLayout(_hbox(splitter))
+        container.setLayout(_hbox(self._splitter))
         self.setCentralWidget(container)
 
         self._setup_menu_bar()
@@ -102,6 +109,10 @@ class MainWindow(QMainWindow):
         self._runs_panel.new_run_requested.connect(self._on_new_run)
         self._runs_panel.run_deleted.connect(self._on_run_deleted)
         self._runs_panel.notes_changed.connect(self._save_state)
+
+        # Collapse cases panel when a run is clicked; re-expand when case panel header is clicked
+        self._runs_panel.run_selected.connect(self._collapse_cases_panel)
+        self._case_panel.expand_requested.connect(self._expand_cases_panel)
 
         self._sim_runner.progress_updated.connect(self._on_progress_updated)
         self._sim_runner.run_finished.connect(self._on_run_finished)
@@ -147,6 +158,23 @@ class MainWindow(QMainWindow):
         about_action = QAction("&About", self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
+
+        # -- Theme selector (right-aligned in menu bar) -----------------------
+        theme_label = QLabel("  Theme: ")
+        theme_label.setStyleSheet("color: #94a3b8; background: transparent;")
+        label_action = QWidgetAction(self)
+        label_action.setDefaultWidget(theme_label)
+        menu_bar.addAction(label_action)
+
+        self._theme_combo = QComboBox()
+        self._theme_combo.addItems(list(THEMES.keys()))
+        self._theme_combo.setCurrentText(DEFAULT_THEME)
+        self._theme_combo.setToolTip("Change the application colour theme")
+        self._theme_combo.setFixedWidth(160)
+        self._theme_combo.currentTextChanged.connect(self._on_theme_changed)
+        theme_action = QWidgetAction(self)
+        theme_action.setDefaultWidget(self._theme_combo)
+        menu_bar.addAction(theme_action)
 
     # --------------------------------------------------------------------- #
     # Slots – Panel interaction                                               #
@@ -233,6 +261,7 @@ class MainWindow(QMainWindow):
             output_dir=output_dir,
             flow_options=dialog.get_options(),
             mpi_processes=dialog.get_mpi_processes(),
+            name=dialog.get_name(),
         )
 
         case.add_run(run)
@@ -371,6 +400,30 @@ class MainWindow(QMainWindow):
             "OPM Flow reservoir simulations.</p>"
             "<p>Built with PySide6 and matplotlib.</p>",
         )
+
+    def _on_theme_changed(self, theme_name: str) -> None:
+        """Switch the application colour theme."""
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, theme_name)
+
+    def _collapse_cases_panel(self, _run_id: str = "") -> None:
+        """Collapse the cases panel when a run is selected."""
+        sizes = self._splitter.sizes()
+        if sizes[0] > 0:
+            self._cases_panel_width = sizes[0]
+            sizes[1] += sizes[0]
+            sizes[0] = 0
+            self._splitter.setSizes(sizes)
+
+    def _expand_cases_panel(self) -> None:
+        """Re-expand the cases panel."""
+        sizes = self._splitter.sizes()
+        if sizes[0] == 0:
+            restore = self._cases_panel_width or 240
+            sizes[1] = max(0, sizes[1] - restore)
+            sizes[0] = restore
+            self._splitter.setSizes(sizes)
 
     # --------------------------------------------------------------------- #
     # Persistence                                                             #
