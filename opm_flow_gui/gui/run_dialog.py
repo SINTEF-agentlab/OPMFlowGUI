@@ -12,12 +12,12 @@ from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QDoubleValidator
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -239,11 +239,19 @@ class RunDialog(QDialog):
                 widget = spin
 
             elif opt_type == "float":
-                dspin = QDoubleSpinBox()
-                dspin.setRange(-1e15, 1e15)
-                dspin.setDecimals(8)
-                dspin.setValue(float(default))
-                widget = dspin
+                # Use a line edit so the user can type scientific notation freely.
+                # Format the default using Python's 'g' specifier so that very
+                # small/large defaults are shown in a readable scientific form
+                # (e.g. 1e-06 rather than 0.000001).
+                try:
+                    formatted = f"{float(default):g}"
+                except ValueError:
+                    formatted = default
+                line = QLineEdit(formatted)
+                validator = QDoubleValidator()
+                validator.setNotation(QDoubleValidator.Notation.ScientificNotation)
+                line.setValidator(validator)
+                widget = line
 
             else:
                 # Fallback for unknown types
@@ -277,12 +285,24 @@ class RunDialog(QDialog):
         for opt in OPM_FLOW_OPTIONS:
             name: str = opt["name"]
             default: str = opt["default"]
+            opt_type: str = opt["type"]
             widget = self._option_widgets.get(name)
             if widget is None:
                 continue
 
-            value = self._read_widget_value(widget, opt["type"])
-            if value != default:
+            value = self._read_widget_value(widget, opt_type)
+
+            # For float options, compare numerically so that formatting
+            # differences (e.g. "1e-06" vs "1e-6") are treated as equal.
+            if opt_type == "float":
+                try:
+                    is_default = float(value) == float(default)
+                except ValueError:
+                    is_default = False
+            else:
+                is_default = value == default
+
+            if not is_default:
                 changed[name] = value
 
         return changed
@@ -372,8 +392,6 @@ class RunDialog(QDialog):
             return "true" if widget.isChecked() else "false"
         if isinstance(widget, QSpinBox):
             return str(widget.value())
-        if isinstance(widget, QDoubleSpinBox):
-            return str(widget.value())
         if isinstance(widget, QLineEdit):
             return widget.text()
         return ""
@@ -389,7 +407,11 @@ class RunDialog(QDialog):
             widget.setChecked(value.lower() == "true")
         elif isinstance(widget, QSpinBox):
             widget.setValue(int(value))
-        elif isinstance(widget, QDoubleSpinBox):
-            widget.setValue(float(value))
         elif isinstance(widget, QLineEdit):
+            # For float type, reformat to scientific notation if possible
+            if opt_type == "float":
+                try:
+                    value = f"{float(value):g}"
+                except ValueError:
+                    pass
             widget.setText(value)

@@ -7,6 +7,8 @@ launching additional simulations.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -34,6 +36,32 @@ from opm_flow_gui.gui.styles import (
 )
 
 
+def _format_elapsed(started_at: str, finished_at: str | None = None) -> str:
+    """Return a human-readable elapsed-time string between two ISO timestamps.
+
+    If *finished_at* is ``None`` the elapsed time up to *now* is returned.
+    """
+    try:
+        fmt = "%Y-%m-%dT%H:%M:%S.%f" if "." in started_at else "%Y-%m-%dT%H:%M:%S"
+        start = datetime.strptime(started_at[:26], fmt)
+        if finished_at:
+            end_str = finished_at
+            fmt2 = "%Y-%m-%dT%H:%M:%S.%f" if "." in end_str else "%Y-%m-%dT%H:%M:%S"
+            end = datetime.strptime(end_str[:26], fmt2)
+        else:
+            end = datetime.now()
+        delta = int((end - start).total_seconds())
+        hours, remainder = divmod(max(delta, 0), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if hours:
+            return f"{hours}h {minutes:02d}m {seconds:02d}s"
+        if minutes:
+            return f"{minutes}m {seconds:02d}s"
+        return f"{seconds}s"
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
 class RunItemWidget(QWidget):
     """Card-like widget representing a single simulation run."""
 
@@ -42,6 +70,7 @@ class RunItemWidget(QWidget):
     def __init__(self, run: SimulationRun, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._run_id = run.run_id
+        self._run = run
 
         # ---- outer card layout ----
         card = QVBoxLayout(self)
@@ -128,6 +157,9 @@ class RunItemWidget(QWidget):
 
         self.setStyleSheet("background: transparent;")
 
+        # Set initial rich tooltip
+        self._refresh_tooltip()
+
     # -- public helpers for live updates --
 
     def set_progress(self, progress: float) -> None:
@@ -135,6 +167,8 @@ class RunItemWidget(QWidget):
         self._progress_bar.setValue(int(progress))
         if progress > 0:
             self._progress_bar.setVisible(True)
+        self._run.progress = progress
+        self._refresh_tooltip()
 
     def set_status(self, status: str) -> None:
         """Update the status label text and colour."""
@@ -148,10 +182,47 @@ class RunItemWidget(QWidget):
         # Show progress bar when running
         if upper == "RUNNING":
             self._progress_bar.setVisible(True)
+        self._refresh_tooltip()
 
     @property
     def run_id(self) -> str:
         return self._run_id
+
+    # -- internal --
+
+    def _refresh_tooltip(self) -> None:
+        """Build and set a rich HTML tooltip summarising the run."""
+        run = self._run
+        lines: list[str] = [
+            f"<b>Run ID:</b> {run.run_id}",
+            f"<b>Case:</b> {run.case_path}",
+            f"<b>Output:</b> {run.output_dir}",
+            f"<b>Status:</b> {run.status.value}",
+            f"<b>MPI processes:</b> {run.mpi_processes}",
+        ]
+
+        if run.started_at:
+            lines.append(f"<b>Started:</b> {run.started_at[:19].replace('T', ' ')}")
+            if run.status == RunStatus.RUNNING:
+                elapsed = _format_elapsed(run.started_at)
+                lines.append(f"<b>Elapsed:</b> {elapsed}")
+
+        if run.finished_at:
+            lines.append(
+                f"<b>Finished:</b> {run.finished_at[:19].replace('T', ' ')}"
+            )
+            if run.started_at:
+                elapsed = _format_elapsed(run.started_at, run.finished_at)
+                lines.append(f"<b>Duration:</b> {elapsed}")
+
+        if run.progress > 0:
+            lines.append(f"<b>Progress:</b> {run.progress:.1f}%")
+
+        if run.flow_options:
+            opts = ", ".join(f"{k}={v}" for k, v in run.flow_options.items())
+            lines.append(f"<b>Options:</b> {opts}")
+
+        self.setToolTip("<br>".join(lines))
 
 
 class RunsPanel(QWidget):

@@ -250,6 +250,7 @@ class MainWindow(QMainWindow):
 
         self._save_state()
         self._runs_panel.refresh()
+        self._case_panel.refresh()
 
     def _on_run_deleted(self, case_path: str, run_id: str) -> None:
         # Cancel if still running
@@ -266,6 +267,7 @@ class MainWindow(QMainWindow):
 
         self._runs_panel.refresh()
         self.statusBar().showMessage(f"Deleted run {run_id[:8]}")
+        self._case_panel.refresh()
 
     # --------------------------------------------------------------------- #
     # Slots – Simulation progress                                             #
