@@ -239,8 +239,6 @@ class SimulationRunner(QObject):
 
         Returns ``True`` if the process was started successfully.
         """
-        from .case_manager import SimulationRun as _SR  # noqa: F811
-
         if run.run_id in self._processes:
             return False
 
