@@ -122,6 +122,13 @@ class _LogHighlighter(QSyntaxHighlighter):
         self._fmt_search.setBackground(QColor("#f59e0b"))
         self._fmt_search.setForeground(QColor("#1e1e2e"))
 
+    def update_colors(self) -> None:
+        """Refresh highlight colours from the current active theme constants."""
+        self._fmt_header.setForeground(QColor(ACCENT))
+        self._fmt_warning.setForeground(QColor(WARNING))
+        self._fmt_error.setForeground(QColor(ERROR))
+        self.rehighlight()
+
     def set_search(self, text: str) -> None:
         self._search_text = text
         self.rehighlight()
@@ -239,15 +246,15 @@ class LogViewerPanel(QWidget):
         root.setSpacing(0)
 
         # --- toolbar ---
-        toolbar = QWidget()
-        toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
-        tb = QHBoxLayout(toolbar)
+        self._toolbar = QWidget()
+        self._toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
+        tb = QHBoxLayout(self._toolbar)
         tb.setContentsMargins(8, 6, 8, 6)
         tb.setSpacing(8)
 
-        file_label = QLabel("File:")
-        file_label.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
-        tb.addWidget(file_label)
+        self._file_label = QLabel("File:")
+        self._file_label.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+        tb.addWidget(self._file_label)
 
         self._file_combo = QComboBox()
         self._file_combo.setMinimumWidth(200)
@@ -284,7 +291,7 @@ class LogViewerPanel(QWidget):
         self._btn_reload.setToolTip("Reload the log file from disk")
         tb.addWidget(self._btn_reload)
 
-        root.addWidget(toolbar)
+        root.addWidget(self._toolbar)
 
         # --- main area: step list + text view ---
         main_splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -425,6 +432,52 @@ class LogViewerPanel(QWidget):
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    def refresh_styles(self) -> None:
+        """Re-apply inline stylesheets using the current active theme colours."""
+        self._toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
+        self._file_label.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+        self._search_edit.setStyleSheet(
+            f"QLineEdit {{ padding: 4px 8px; border: 1px solid {BORDER};"
+            f" border-radius: 4px; background-color: {BG_TERTIARY};"
+            f" color: {TEXT_PRIMARY}; }}"
+        )
+        self._match_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; background: transparent; font-size: 11px;"
+        )
+        for btn in (self._btn_prev, self._btn_next, self._btn_reload):
+            btn.setStyleSheet(
+                f"QPushButton {{ padding: 4px 10px; border-radius: 4px;"
+                f" background-color: {BG_TERTIARY}; color: {TEXT_SECONDARY};"
+                f" border: 1px solid {BORDER}; font-size: 12px; }}"
+                f" QPushButton:hover {{ background-color: {ACCENT};"
+                f" color: {TEXT_PRIMARY}; }}"
+            )
+        self._step_list.setStyleSheet(
+            f"QListWidget {{ background-color: {BG_SECONDARY}; border: none;"
+            f" outline: none; font-size: 11px; }}"
+            f" QListWidget::item {{ padding: 4px 8px;"
+            f" border-bottom: 1px solid {BORDER}; }}"
+            f" QListWidget::item:selected {{ background-color: {BG_TERTIARY}; }}"
+            f" QListWidget::item:hover {{ background-color: {BG_TERTIARY}; }}"
+        )
+        self._text_view.setStyleSheet(
+            f"QPlainTextEdit {{ background-color: {BG_PRIMARY};"
+            f" color: {TEXT_PRIMARY}; border: none;"
+            f" selection-background-color: {ACCENT}; }}"
+        )
+        self._warn_list.setStyleSheet(
+            f"QListWidget {{ background-color: {BG_SECONDARY}; border: none;"
+            f" outline: none; font-size: 11px; }}"
+            f" QListWidget::item {{ padding: 3px 8px;"
+            f" border-bottom: 1px solid {BORDER}; }}"
+            f" QListWidget::item:selected {{ background-color: {BG_TERTIARY}; }}"
+            f" QListWidget::item:hover {{ background-color: {BG_TERTIARY}; }}"
+        )
+        self._empty_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 14px; background: transparent;"
+        )
+        self._highlighter.update_colors()
 
     def set_run(self, run: SimulationRun | None) -> None:
         """Load log files for *run*, or clear the panel when ``None``."""
