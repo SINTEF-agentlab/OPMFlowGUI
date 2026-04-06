@@ -23,7 +23,7 @@ from opm_flow_gui.core.case_manager import (
     SimulationRun,
 )
 from opm_flow_gui.core.config import ConfigManager, DEFAULT_CONFIG_DIR
-from opm_flow_gui.core.simulation_runner import SimulationRunner
+from opm_flow_gui.core.simulation_runner import SimulationRunner, get_flow_options
 from opm_flow_gui.gui.case_panel import CasePanel
 from opm_flow_gui.gui.run_dialog import RunDialog
 from opm_flow_gui.gui.runs_panel import RunsPanel
@@ -75,16 +75,17 @@ class MainWindow(QMainWindow):
         self._current_case_path: str | None = None
         self._current_run_id: str | None = None
 
+        # Apply saved theme BEFORE panel creation so inline stylesheets
+        # in panel constructors use the correct theme colour constants.
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, config.theme)
+
         # --- UI setup --------------------------------------------------------
         self._case_panel = CasePanel(self._case_manager)
         self._runs_panel = RunsPanel()
         self._summary_panel = SummaryPanel()
         self._summary_panel.set_resinsight_binary(config.resinsight_binary)
-
-        # Apply saved theme
-        app = QApplication.instance()
-        if isinstance(app, QApplication):
-            apply_theme(app, config.theme)
 
         splitter = QSplitter(Qt.Orientation.Horizontal)
         splitter.addWidget(self._case_panel)
@@ -94,7 +95,9 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(1, 1)
         splitter.setStretchFactor(2, 3)
         splitter.setSizes([260, 280, 700])
-        splitter.setCollapsible(0, True)
+        # Keep collapsible=False so the collapsed bar in CasePanel remains
+        # visible at the minimum width; collapse is handled programmatically.
+        splitter.setCollapsible(0, False)
         self._splitter = splitter
         self._cases_panel_width: int = 260  # track last expanded width
 
@@ -238,7 +241,8 @@ class MainWindow(QMainWindow):
             else str(Path(case.directory) / "output")
         )
 
-        dialog = RunDialog(case.name, output_base, parent=self)
+        flow_opts = get_flow_options(config.flow_binary)
+        dialog = RunDialog(case.name, output_base, flow_options=flow_opts, parent=self)
         if dialog.exec() != RunDialog.DialogCode.Accepted:
             return
 
@@ -379,12 +383,18 @@ class MainWindow(QMainWindow):
             return
 
         new_config = dialog.get_config()
+        old_flow_binary = self._config_manager.config.flow_binary
         self._config_manager._config = new_config
         self._config_manager.save()
 
         # Update simulation runner binaries
         self._sim_runner._flow_binary = new_config.flow_binary
         self._sim_runner._mpirun_binary = new_config.mpirun_binary
+
+        # Invalidate cached flow options when the binary path changes
+        if new_config.flow_binary != old_flow_binary:
+            from opm_flow_gui.core.simulation_runner import _flow_options_cache
+            _flow_options_cache.pop(old_flow_binary, None)
 
         # Update ResInsight binary in summary panel
         self._summary_panel.set_resinsight_binary(new_config.resinsight_binary)
@@ -425,20 +435,20 @@ class MainWindow(QMainWindow):
         )
 
     def _collapse_cases_panel(self, _run_id: str = "") -> None:
-        """Collapse the cases panel when a run is selected."""
+        """Collapse the cases panel to its narrow indicator strip."""
         sizes = self._splitter.sizes()
-        if sizes[0] > 0:
+        if sizes[0] > CasePanel.COLLAPSED_WIDTH:
             self._cases_panel_width = sizes[0]
-            sizes[1] += sizes[0]
-            sizes[0] = 0
+            sizes[1] += sizes[0] - CasePanel.COLLAPSED_WIDTH
+            sizes[0] = CasePanel.COLLAPSED_WIDTH
             self._splitter.setSizes(sizes)
 
     def _expand_cases_panel(self) -> None:
         """Re-expand the cases panel."""
         sizes = self._splitter.sizes()
-        if sizes[0] == 0:
+        if sizes[0] <= CasePanel.COLLAPSED_WIDTH:
             restore = self._cases_panel_width or 260
-            sizes[1] = max(0, sizes[1] - restore)
+            sizes[1] = max(0, sizes[1] - (restore - CasePanel.COLLAPSED_WIDTH))
             sizes[0] = restore
             self._splitter.setSizes(sizes)
 

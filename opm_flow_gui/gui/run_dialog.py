@@ -33,7 +33,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from opm_flow_gui.core.simulation_runner import OPM_FLOW_OPTIONS
 from opm_flow_gui.gui.styles import (
     ACCENT,
     ACCENT_HOVER,
@@ -55,11 +54,13 @@ class RunDialog(QDialog):
         self,
         case_name: str,
         output_base_path: str,
+        flow_options: list[dict] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._case_name = case_name
         self._output_base_path = output_base_path
+        self._flow_options: list[dict] = flow_options if flow_options is not None else []
 
         # Mapping of option-name → widget for the Flow Options tab
         self._option_widgets: dict[str, QWidget] = {}
@@ -217,7 +218,7 @@ class RunDialog(QDialog):
         form.setSpacing(10)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-        for opt in OPM_FLOW_OPTIONS:
+        for opt in self._flow_options:
             name: str = opt["name"]
             opt_type: str = opt["type"]
             default: str = opt["default"]
@@ -299,7 +300,7 @@ class RunDialog(QDialog):
         """Return a dict of option values that differ from their defaults."""
         changed: dict[str, str] = {}
 
-        for opt in OPM_FLOW_OPTIONS:
+        for opt in self._flow_options:
             name: str = opt["name"]
             default: str = opt["default"]
             opt_type: str = opt["type"]
@@ -359,7 +360,7 @@ class RunDialog(QDialog):
         with open(path, "r", encoding="utf-8") as fh:
             data: dict = json.load(fh)
 
-        for opt in OPM_FLOW_OPTIONS:
+        for opt in self._flow_options:
             name = opt["name"]
             if name in data:
                 self._write_widget_value(
@@ -380,7 +381,7 @@ class RunDialog(QDialog):
             return
 
         data: dict[str, str] = {}
-        for opt in OPM_FLOW_OPTIONS:
+        for opt in self._flow_options:
             name = opt["name"]
             widget = self._option_widgets.get(name)
             if widget is not None:
@@ -391,7 +392,7 @@ class RunDialog(QDialog):
 
     def _reset_defaults(self) -> None:
         """Reset every option widget back to its default value."""
-        for opt in OPM_FLOW_OPTIONS:
+        for opt in self._flow_options:
             name = opt["name"]
             widget = self._option_widgets.get(name)
             if widget is not None:

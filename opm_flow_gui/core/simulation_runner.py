@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import subprocess
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QProcess, Signal
@@ -14,231 +15,143 @@ if TYPE_CHECKING:
     from .case_manager import SimulationRun
 
 # ---------------------------------------------------------------------------
-# OPM Flow command-line option descriptors
+# OPM Flow help-text parser
 # ---------------------------------------------------------------------------
 
-OPM_FLOW_OPTIONS: list[dict] = [
-    {
-        "name": "linear-solver",
-        "type": "string",
-        "default": "cpr_trueimpes",
-        "description": "Linear solver method",
-        "choices": ["cpr_trueimpes", "cpr_quasiimpes", "ilu0", "amg"],
-    },
-    {
-        "name": "tolerance-mb",
-        "type": "float",
-        "default": "1e-6",
-        "description": "Tolerance for mass balance equations",
-    },
-    {
-        "name": "tolerance-cnv",
-        "type": "float",
-        "default": "1e-2",
-        "description": "Tolerance for CNV convergence criterion",
-    },
-    {
-        "name": "tolerance-cnv-relaxed",
-        "type": "float",
-        "default": "1e9",
-        "description": "Relaxed tolerance for CNV convergence criterion",
-    },
-    {
-        "name": "tolerance-wells",
-        "type": "float",
-        "default": "1e-4",
-        "description": "Tolerance for well equations",
-    },
-    {
-        "name": "max-inner-iterations",
-        "type": "int",
-        "default": "50",
-        "description": "Maximum number of inner linear solver iterations",
-    },
-    {
-        "name": "newton-max-iterations",
-        "type": "int",
-        "default": "20",
-        "description": "Maximum number of Newton iterations per time step",
-    },
-    {
-        "name": "enable-tuning",
-        "type": "bool",
-        "default": "false",
-        "description": "Honor TUNING keyword settings from the deck",
-    },
-    {
-        "name": "enable-opm-rst-file",
-        "type": "bool",
-        "default": "false",
-        "description": "Write OPM-native restart files",
-    },
-    {
-        "name": "output-extra-convergence-info",
-        "type": "string",
-        "default": "none",
-        "description": "Extra convergence information to output",
-        "choices": ["none", "steps", "iterations"],
-    },
-    {
-        "name": "relaxed-max-pv-fraction",
-        "type": "float",
-        "default": "0.03",
-        "description": "Max pore-volume fraction for relaxed CNV convergence",
-    },
-    {
-        "name": "solver-approach",
-        "type": "string",
-        "default": "fully_implicit",
-        "description": "Solver approach for the simulation",
-        "choices": ["fully_implicit"],
-    },
-    {
-        "name": "threads-per-process",
-        "type": "int",
-        "default": "1",
-        "description": "Number of threads per MPI process",
-    },
-    {
-        "name": "enable-adaptive-time-stepping",
-        "type": "bool",
-        "default": "true",
-        "description": "Enable adaptive time stepping",
-    },
-    {
-        "name": "time-step-control",
-        "type": "string",
-        "default": "pid",
-        "description": "Time step control strategy",
-        "choices": ["pid", "pid+newtoniterationcount", "simple", "hardcoded"],
-    },
-    {
-        "name": "max-time-step-in-days",
-        "type": "float",
-        "default": "365.0",
-        "description": "Maximum time step size in days",
-    },
-    {
-        "name": "min-time-step-in-days",
-        "type": "float",
-        "default": "0.0",
-        "description": "Minimum time step size in days",
-    },
-    {
-        "name": "max-restarts",
-        "type": "int",
-        "default": "10",
-        "description": "Maximum number of solver restarts per time step",
-    },
-    {
-        "name": "ecl-output",
-        "type": "bool",
-        "default": "true",
-        "description": "Write Eclipse-compatible output files",
-    },
-    {
-        "name": "output-mode",
-        "type": "string",
-        "default": "all",
-        "description": "Controls which data is written to output files",
-        "choices": ["all", "none", "steps"],
-    },
-    {
-        "name": "enable-dry-run",
-        "type": "bool",
-        "default": "false",
-        "description": "Perform input-only run without simulation",
-    },
-    # ── Newton / nonlinear ────────────────────────────────────────────────
-    {
-        "name": "newton-min-iterations",
-        "type": "int",
-        "default": "1",
-        "description": "Minimum number of Newton iterations per time step",
-    },
-    {
-        "name": "solver-restart-factor",
-        "type": "float",
-        "default": "0.33",
-        "description": "Time-step reduction factor when the Newton solver restarts",
-    },
-    # ── Tolerances ────────────────────────────────────────────────────────
-    {
-        "name": "tolerance-mb-relaxed",
-        "type": "float",
-        "default": "1e-6",
-        "description": "Relaxed tolerance for mass balance (used after relaxation kicks in)",
-    },
-    {
-        "name": "tolerance-cnv-energy",
-        "type": "float",
-        "default": "1e-2",
-        "description": "Tolerance for energy CNV convergence criterion",
-    },
-    {
-        "name": "tolerance-pressure-ms-wells",
-        "type": "float",
-        "default": "1e4",
-        "description": "Tolerance for multisegment well pressure equations (Pa)",
-    },
-    # ── Adaptive time-stepping controls ───────────────────────────────────
-    {
-        "name": "time-step-control-growth-factor",
-        "type": "float",
-        "default": "1.25",
-        "description": "Maximum growth factor for the adaptive time-step controller",
-    },
-    {
-        "name": "time-step-control-decay-factor",
-        "type": "float",
-        "default": "0.75",
-        "description": "Decay factor applied to the time step after a convergence failure",
-    },
-    {
-        "name": "time-step-control-target-iterations",
-        "type": "int",
-        "default": "30",
-        "description": "Target total non-linear iterations for the PID time-step controller",
-    },
-    {
-        "name": "time-step-control-target-newton-iterations",
-        "type": "int",
-        "default": "8",
-        "description": "Target Newton iterations for the iteration-count time-step controller",
-    },
-    {
-        "name": "max-time-step-after-well-event-in-days",
-        "type": "float",
-        "default": "1.0",
-        "description": "Maximum time-step size (days) immediately after a well event",
-    },
-    # ── Linear solver ─────────────────────────────────────────────────────
-    {
-        "name": "linear-solver-reduction",
-        "type": "float",
-        "default": "1e-2",
-        "description": "Target relative residual reduction in the linear solver",
-    },
-    {
-        "name": "linsolver-max-iter",
-        "type": "int",
-        "default": "200",
-        "description": "Maximum number of iterations for the linear solver",
-    },
-    # ── Output ────────────────────────────────────────────────────────────
-    {
-        "name": "output-interval",
-        "type": "int",
-        "default": "1",
-        "description": "Number of report steps between two consecutive outputs",
-    },
-    {
-        "name": "enable-vtk-output",
-        "type": "bool",
-        "default": "false",
-        "description": "Write VTK-format output files in addition to Eclipse output",
-    },
-]
+# Matches an option definition line: "    --name=TYPE   description..."
+_HELP_OPT_RE = re.compile(r"^ {4}--([^=\s]+)=(\w+)\s+(.*)")
+# Matches a description continuation line (heavily indented, 20+ spaces)
+_HELP_CONT_RE = re.compile(r"^ {20,}\S")
+# Extracts the default value from "Default: <value>" at end of description
+_DEFAULT_RE = re.compile(r"Default:\s*(.+?)\s*$", re.IGNORECASE)
+# Extracts choices from "[opt1|opt2|opt3]" patterns
+_CHOICES_RE = re.compile(r"\[([^\]]+)\]")
+
+_TYPE_MAP: dict[str, str] = {
+    "STRING": "string",
+    "BOOLEAN": "bool",
+    "INTEGER": "int",
+    "SCALAR": "float",
+}
+
+
+def parse_flow_help(help_text: str) -> list[dict]:
+    """Parse the output of ``flow --help`` into option descriptors.
+
+    Each descriptor is a dict with keys ``name``, ``type``, ``default``,
+    ``description`` and optionally ``choices`` (for string options that list
+    valid values in the help text).
+
+    Parameters
+    ----------
+    help_text:
+        The full text printed by ``flow --help`` (stdout or stderr).
+
+    Returns
+    -------
+    list[dict]
+        Ordered list of option descriptors ready for use in :class:`RunDialog`.
+    """
+    options: list[dict] = []
+
+    # First pass: collect (name, raw_type, description_lines) blocks
+    current_name: str | None = None
+    current_raw_type: str | None = None
+    current_desc_parts: list[str] = []
+
+    def _flush() -> None:
+        if current_name is None:
+            return
+        full_desc = " ".join(current_desc_parts)
+        opt = _build_option(current_name, current_raw_type or "STRING", full_desc)
+        if opt is not None:
+            options.append(opt)
+
+    for line in help_text.splitlines():
+        opt_match = _HELP_OPT_RE.match(line)
+        if opt_match:
+            _flush()
+            current_name = opt_match.group(1)
+            current_raw_type = opt_match.group(2)
+            current_desc_parts = [opt_match.group(3).strip()]
+        elif current_name and _HELP_CONT_RE.match(line):
+            current_desc_parts.append(line.strip())
+
+    _flush()
+    return options
+
+
+def _build_option(name: str, raw_type: str, description: str) -> dict | None:
+    """Convert a raw option block into a descriptor dict."""
+    opt_type = _TYPE_MAP.get(raw_type.upper(), "string")
+
+    # Extract and strip the default value from the description
+    default = ""
+    dm = _DEFAULT_RE.search(description)
+    if dm:
+        raw_default = dm.group(1).strip()
+        # Strip surrounding quotes from string defaults
+        if len(raw_default) >= 2 and raw_default[0] == '"' and raw_default[-1] == '"':
+            default = raw_default[1:-1]
+        else:
+            default = raw_default
+        # Trim the "Default: …" suffix from the visible description
+        description = description[: dm.start()].rstrip(". \t")
+
+    if opt_type == "bool":
+        default = default.lower()
+
+    # Extract enumerated choices from "[a|b|c]" patterns (skip for booleans)
+    choices: list[str] | None = None
+    if opt_type != "bool":
+        cm = _CHOICES_RE.search(description)
+        if cm and "|" in cm.group(1):
+            choices = [c.strip() for c in cm.group(1).split("|")]
+
+    opt: dict = {
+        "name": name,
+        "type": opt_type,
+        "default": default,
+        "description": description.strip(),
+    }
+    if choices:
+        opt["choices"] = choices
+    return opt
+
+
+# Cache parsed options per binary path so ``flow --help`` is only run once
+_flow_options_cache: dict[str, list[dict]] = {}
+
+
+def get_flow_options(flow_binary: str) -> list[dict]:
+    """Return option descriptors for *flow_binary* by parsing ``--help``.
+
+    The result is cached so the subprocess is only spawned once per binary
+    path within a single process lifetime.  Returns an empty list if
+    *flow_binary* cannot be executed.
+    """
+    if flow_binary in _flow_options_cache:
+        return _flow_options_cache[flow_binary]
+
+    try:
+        result = subprocess.run(
+            [flow_binary, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        # flow may print help to stdout or stderr depending on version
+        text = result.stdout if result.stdout.strip() else result.stderr
+        options = parse_flow_help(text)
+    except Exception:
+        logger.warning(
+            "Could not run '%s --help'; no Flow options will be available",
+            flow_binary,
+        )
+        options = []
+
+    _flow_options_cache[flow_binary] = options
+    return options
 
 
 # ---------------------------------------------------------------------------

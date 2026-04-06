@@ -11,8 +11,8 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QByteArray, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QMouseEvent, QPixmap, QResizeEvent
+from PySide6.QtCore import Qt, QByteArray, QEvent, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QEnterEvent, QMouseEvent, QPixmap, QResizeEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -57,6 +58,49 @@ class _ClickableHeader(QLabel):
     """QLabel that emits a ``clicked`` signal on mouse press."""
 
     clicked = Signal()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        super().mousePressEvent(event)
+        self.clicked.emit()
+
+
+class _CollapsedBar(QWidget):
+    """Narrow vertical strip shown when the cases panel is collapsed.
+
+    Clicking the strip emits :attr:`clicked` which the parent panel
+    connects to its :attr:`~CasePanel.expand_requested` signal.
+    """
+
+    clicked = Signal()
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip("Click to expand the Cases panel")
+        self._setup_ui()
+
+    def _setup_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._arrow = QLabel("▶")
+        self._arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._arrow.setStyleSheet(
+            f"color: {_styles.ACCENT}; font-size: 14px; background: transparent;"
+        )
+
+        layout.addStretch()
+        layout.addWidget(self._arrow)
+        layout.addStretch()
+
+        self.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+
+    def refresh_styles(self) -> None:
+        self._arrow.setStyleSheet(
+            f"color: {_styles.ACCENT}; font-size: 14px; background: transparent;"
+        )
+        self.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         super().mousePressEvent(event)
@@ -112,29 +156,52 @@ class _CaseItemWidget(QWidget):
         path_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         left.addWidget(path_label)
 
-        # ---- right column: run-count badge ----
+        # ---- right column: run-count badge (only when at least one run) ----
         run_count = len(case.runs)
-        badge_text = f"{run_count} run{'s' if run_count != 1 else ''}"
-        badge = QLabel(badge_text)
-        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        badge.setStyleSheet(
-            f"background-color: {_styles.ACCENT}; color: {_styles.TEXT_PRIMARY};"
-            " border-radius: 8px; font-size: 11px; font-weight: bold;"
-            " padding: 2px 8px;"
-        )
-        badge.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self._badge: QLabel | None = None
+        if run_count > 0:
+            badge_text = f"{run_count} run{'s' if run_count != 1 else ''}"
+            badge = QLabel(badge_text)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setStyleSheet(
+                f"background-color: {_styles.ACCENT}; color: {_styles.TEXT_PRIMARY};"
+                " border-radius: 8px; font-size: 11px; font-weight: bold;"
+                " padding: 2px 8px;"
+            )
+            badge.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            self._badge = badge
 
         # ---- assemble ----
         row = QHBoxLayout(self)
         row.setContentsMargins(8, 6, 8, 6)
         row.addLayout(left, 1)
-        row.addWidget(badge, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        if self._badge is not None:
+            row.addWidget(
+                self._badge,
+                0,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+            )
 
         self.setStyleSheet("background: transparent;")
+
+    # Hide the run-count badge while the mouse is over the row so it does
+    # not obscure the case name / path text.
+    def enterEvent(self, event: QEnterEvent) -> None:  # noqa: N802
+        if self._badge is not None:
+            self._badge.setVisible(False)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: QEvent) -> None:  # noqa: N802
+        if self._badge is not None:
+            self._badge.setVisible(True)
+        super().leaveEvent(event)
 
 
 class CasePanel(QWidget):
     """Left panel displaying the list of loaded simulation cases."""
+
+    # Width (pixels) the panel is shrunk to when collapsed programmatically
+    COLLAPSED_WIDTH: int = 32
 
     case_selected = Signal(str)
     expand_requested = Signal()  # emitted when the collapsed header is clicked
@@ -146,7 +213,8 @@ class CasePanel(QWidget):
     ) -> None:
         super().__init__(parent)
         self._case_manager = case_manager
-        self.setMinimumWidth(220)
+        # Allow the panel to be squeezed to the narrow collapsed bar
+        self.setMinimumWidth(self.COLLAPSED_WIDTH)
         self._setup_ui()
         self._connect_signals()
         self.refresh()
@@ -155,9 +223,24 @@ class CasePanel(QWidget):
     # UI construction
     # ------------------------------------------------------------------
     def _setup_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # QStackedWidget lets us switch between the narrow collapsed bar
+        # (index 0) and the full panel content (index 1).
+        self._stacked = QStackedWidget()
+
+        # ── index 0: narrow collapsed bar ─────────────────────────────
+        self._collapsed_bar = _CollapsedBar()
+        self._collapsed_bar.clicked.connect(self.expand_requested)
+        self._stacked.addWidget(self._collapsed_bar)
+
+        # ── index 1: full panel content ────────────────────────────────
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
 
         # --- header (click to expand when collapsed) ---
         header_widget = QWidget()
@@ -187,7 +270,7 @@ class CasePanel(QWidget):
         self._header.clicked.connect(self.expand_requested)
         header_layout.addWidget(self._header, 1)
 
-        layout.addWidget(header_widget)
+        content_layout.addWidget(header_widget)
 
         # --- search / filter ---
         self._filter_edit = QLineEdit()
@@ -198,7 +281,7 @@ class CasePanel(QWidget):
             f" border: 1px solid {_styles.BORDER}; border-radius: 6px;"
             f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_PRIMARY}; }}"
         )
-        layout.addWidget(self._filter_edit)
+        content_layout.addWidget(self._filter_edit)
 
         # --- toolbar row ---
         self._toolbar = QWidget()
@@ -225,7 +308,7 @@ class CasePanel(QWidget):
         )
         tb_layout.addWidget(self._hint_label)
 
-        layout.addWidget(self._toolbar)
+        content_layout.addWidget(self._toolbar)
 
         # --- case list ---
         self._list = QListWidget()
@@ -237,7 +320,13 @@ class CasePanel(QWidget):
             f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
             f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
-        layout.addWidget(self._list, 1)
+        content_layout.addWidget(self._list, 1)
+
+        self._stacked.addWidget(content_widget)
+
+        # Start with full content visible
+        self._stacked.setCurrentIndex(1)
+        outer.addWidget(self._stacked)
 
     @staticmethod
     def _make_button(text: str) -> QPushButton:
@@ -253,8 +342,17 @@ class CasePanel(QWidget):
         )
         return btn
 
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
+        """Switch between the collapsed bar and full content based on width."""
+        super().resizeEvent(event)
+        target = 0 if self.width() <= self.COLLAPSED_WIDTH + 10 else 1
+        if self._stacked.currentIndex() != target:
+            self._stacked.setCurrentIndex(target)
+
     def refresh_styles(self) -> None:
         """Re-apply inline stylesheets using the current active theme colours."""
+        self._collapsed_bar.refresh_styles()
+
         # Header widget background
         header_widget = self._header.parentWidget()
         if header_widget is not None:

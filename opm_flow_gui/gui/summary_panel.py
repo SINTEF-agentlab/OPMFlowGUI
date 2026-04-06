@@ -767,3 +767,5 @@ class SummaryPanel(QWidget):
         self._refresh_plot_theme()
         self._canvas.draw_idle()
 
+        # Propagate theme update to the embedded log viewer
+        self._log_viewer.refresh_styles()
