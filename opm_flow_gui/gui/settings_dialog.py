@@ -12,12 +12,14 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFileDialog,
+    QFrame,
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QListWidget,
     QPushButton,
+    QScrollArea,
     QVBoxLayout,
     QWidget,
 )
@@ -43,7 +45,7 @@ class SettingsDialog(QDialog):
         self._config = config
 
         self.setWindowTitle("Settings")
-        self.setMinimumSize(580, 620)
+        self.setMinimumSize(700, 520)
 
         self._setup_ui()
 
@@ -53,24 +55,37 @@ class SettingsDialog(QDialog):
     def _setup_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(16, 16, 16, 16)
-        root.setSpacing(14)
+        root.setSpacing(10)
 
         # ---- header ----
         header = QLabel("\u2699  Settings")
         header.setStyleSheet(
-            f"font-size: 18px; font-weight: bold; color: {ACCENT_LIGHT};"
+            f"font-size: 15px; font-weight: bold; color: {ACCENT_LIGHT};"
             " background: transparent; padding-bottom: 4px;"
         )
         root.addWidget(header)
 
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        content = QWidget()
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(10)
+
         # ---- appearance group ----
-        root.addWidget(self._build_appearance_group())
+        content_layout.addWidget(self._build_appearance_group())
 
         # ---- paths group ----
-        root.addWidget(self._build_paths_group())
+        content_layout.addWidget(self._build_paths_group())
 
         # ---- search directories group ----
-        root.addWidget(self._build_search_dirs_group(), 1)
+        content_layout.addWidget(self._build_search_dirs_group(), 1)
+
+        scroll.setWidget(content)
+        root.addWidget(scroll, 1)
 
         # ---- button box ----
         btn_box = QDialogButtonBox(
@@ -87,12 +102,12 @@ class SettingsDialog(QDialog):
     def _build_appearance_group(self) -> QGroupBox:
         group = QGroupBox("Appearance")
         layout = QVBoxLayout(group)
-        layout.setContentsMargins(12, 16, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(12, 12, 12, 10)
+        layout.setSpacing(8)
 
         row = QHBoxLayout()
         row.setSpacing(8)
-        lbl = QLabel("Colour Theme:")
+        lbl = QLabel("Theme:")
         lbl.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-weight: 600; background: transparent;"
         )
@@ -111,8 +126,8 @@ class SettingsDialog(QDialog):
     def _build_paths_group(self) -> QGroupBox:
         group = QGroupBox("Paths")
         layout = QVBoxLayout(group)
-        layout.setContentsMargins(12, 16, 12, 12)
-        layout.setSpacing(10)
+        layout.setContentsMargins(12, 12, 12, 10)
+        layout.setSpacing(8)
 
         # OPM Flow binary
         self._edit_flow = self._add_path_row(
@@ -155,7 +170,7 @@ class SettingsDialog(QDialog):
     def _build_search_dirs_group(self) -> QGroupBox:
         group = QGroupBox("Auto-Discovery Directories")
         layout = QVBoxLayout(group)
-        layout.setContentsMargins(12, 16, 12, 12)
+        layout.setContentsMargins(12, 12, 12, 10)
         layout.setSpacing(8)
 
         self._list_dirs = QListWidget()
@@ -201,15 +216,16 @@ class SettingsDialog(QDialog):
         browse_slot: object,
     ) -> QLineEdit:
         """Create a labelled line-edit + Browse button row."""
+        row = QHBoxLayout()
+        row.setSpacing(6)
+
         label = QLabel(label_text)
+        label.setFixedWidth(135)
         label.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-weight: 600;"
             " background: transparent;"
         )
-        parent_layout.addWidget(label)
-
-        row = QHBoxLayout()
-        row.setSpacing(6)
+        row.addWidget(label)
 
         edit = QLineEdit(initial_value)
         edit.setToolTip(tooltip)
@@ -218,7 +234,7 @@ class SettingsDialog(QDialog):
         btn = QPushButton("Browse")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(
-            f"QPushButton {{ padding: 8px 14px; border-radius: 6px;"
+            f"QPushButton {{ padding: 6px 12px; border-radius: 6px;"
             f" background-color: {BG_TERTIARY}; color: {TEXT_PRIMARY};"
             f" border: 1px solid {BORDER}; }}"
             f" QPushButton:hover {{ background-color: {BG_SECONDARY};"

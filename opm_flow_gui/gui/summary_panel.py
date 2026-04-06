@@ -56,21 +56,24 @@ from opm_flow_gui.gui.styles import (
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Plot colour palette – a vibrant set that reads well on a dark background
-# ---------------------------------------------------------------------------
-_PLOT_COLORS: list[str] = [
-    "#7c3aed",  # purple (accent)
-    "#22c55e",  # green
-    "#f59e0b",  # amber
-    "#3b82f6",  # blue
-    "#ef4444",  # red
-    "#06b6d4",  # cyan
-    "#ec4899",  # pink
-    "#a78bfa",  # light purple
-    "#facc15",  # yellow
-    "#14b8a6",  # teal
-]
+def _hex_to_rgb(color: str) -> tuple[int, int, int]:
+    color = color.lstrip("#")
+    return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
+
+
+def _rgb_to_hex(rgb: tuple[int, int, int]) -> str:
+    r, g, b = rgb
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _mix_colors(a: str, b: str, ratio: float) -> str:
+    """Blend hex colour *a* toward *b* by *ratio* (0..1)."""
+    ar, ag, ab = _hex_to_rgb(a)
+    br, bg, bb = _hex_to_rgb(b)
+    rr = max(0, min(255, int(ar + (br - ar) * ratio)))
+    rg = max(0, min(255, int(ag + (bg - ag) * ratio)))
+    rb = max(0, min(255, int(ab + (bb - ab) * ratio)))
+    return _rgb_to_hex((rr, rg, rb))
 
 
 class SummaryPanel(QWidget):
@@ -87,6 +90,7 @@ class SummaryPanel(QWidget):
         self._legend_visible: bool = True
         self._plotted_keys: list[str] = []
         self._color_index: int = 0
+        self._plot_colors: list[str] = self._build_plot_palette()
         self._last_selected_key: str | None = None   # persists across run switches
 
         self._setup_ui()
@@ -136,9 +140,9 @@ class SummaryPanel(QWidget):
         layout.setSpacing(0)
 
         # ---- toolbar ----
-        toolbar = QWidget()
-        toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
-        tb_layout = QHBoxLayout(toolbar)
+        self._toolbar = QWidget()
+        self._toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
+        tb_layout = QHBoxLayout(self._toolbar)
         tb_layout.setContentsMargins(8, 6, 8, 6)
         tb_layout.setSpacing(8)
 
@@ -167,7 +171,7 @@ class SummaryPanel(QWidget):
         tb_layout.addWidget(self._chk_overlay)
         tb_layout.addWidget(self._btn_resinsight)
 
-        layout.addWidget(toolbar)
+        layout.addWidget(self._toolbar)
 
         # ---- splitter: tree + canvas ----
         self._splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -267,9 +271,53 @@ class SummaryPanel(QWidget):
         ax.grid(True, color=_styles.BG_TERTIARY, linewidth=0.5)
 
     def _next_color(self) -> str:
-        color = _PLOT_COLORS[self._color_index % len(_PLOT_COLORS)]
+        color = self._plot_colors[self._color_index % len(self._plot_colors)]
         self._color_index += 1
         return color
+
+    def _build_plot_palette(self) -> list[str]:
+        """Build a theme-aware line palette for matplotlib plots."""
+        accent = _styles.ACCENT
+        accent_light = _styles.ACCENT_LIGHT
+        success = _styles.SUCCESS
+        warning = _styles.WARNING
+        error = _styles.ERROR
+        text = _styles.TEXT_PRIMARY
+
+        return [
+            accent,
+            accent_light,
+            success,
+            warning,
+            error,
+            _mix_colors(accent, success, 0.35),
+            _mix_colors(accent, warning, 0.35),
+            _mix_colors(accent, error, 0.30),
+            _mix_colors(success, text, 0.30),
+            _mix_colors(warning, text, 0.25),
+        ]
+
+    def _refresh_plot_theme(self) -> None:
+        """Update existing matplotlib artists to the currently active theme."""
+        self._figure.set_facecolor(_styles.BG_PRIMARY)
+        self._style_axes()
+
+        # Keep existing curves but recolour them to match the active theme.
+        for i, line in enumerate(self._axes.lines):
+            line.set_color(self._plot_colors[i % len(self._plot_colors)])
+
+        self._axes.title.set_color(_styles.TEXT_PRIMARY)
+        self._axes.xaxis.label.set_color(_styles.TEXT_SECONDARY)
+        self._axes.yaxis.label.set_color(_styles.TEXT_SECONDARY)
+
+        legend = self._axes.get_legend()
+        if legend is not None:
+            frame = legend.get_frame()
+            frame.set_facecolor(_styles.BG_TERTIARY)
+            frame.set_edgecolor(_styles.BORDER)
+            frame.set_alpha(0.9)
+            for text in legend.get_texts():
+                text.set_color(_styles.TEXT_PRIMARY)
 
     # ------------------------------------------------------------------
     # Signal wiring
@@ -580,7 +628,7 @@ class SummaryPanel(QWidget):
                 if vector is None:
                     continue
                 dates, values = vector
-                color = _PLOT_COLORS[i % len(_PLOT_COLORS)]
+                color = self._plot_colors[i % len(self._plot_colors)]
                 ax.plot(dates, values, color=color, linewidth=1.5, label=key)
 
             if self._plotted_keys:
@@ -666,10 +714,17 @@ class SummaryPanel(QWidget):
 
     def refresh_styles(self) -> None:
         """Re-apply inline stylesheets using the current active theme colours."""
+        self._plot_colors = self._build_plot_palette()
+
         self._header.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
             f" padding: 12px 12px 8px 12px; background-color: {_styles.BG_SECONDARY};"
         )
+        self._tabs.setStyleSheet(
+            f"QTabWidget::pane {{ background-color: {_styles.BG_PRIMARY}; border: none; }}"
+        )
+        self._toolbar.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+
         # Toolbar widgets
         toolbar_btns = [
             self._btn_clear,
@@ -687,6 +742,10 @@ class SummaryPanel(QWidget):
                 f" QPushButton:disabled {{ background-color: {_styles.BG_TERTIARY};"
                 f" color: {_styles.TEXT_MUTED}; }}"
             )
+        self._chk_overlay.setStyleSheet(
+            f"QCheckBox {{ color: {_styles.TEXT_SECONDARY}; font-size: 12px;"
+            f" background: transparent; }}"
+        )
         self._filter_edit.setStyleSheet(
             f"QLineEdit {{ margin: 6px 8px; padding: 6px 10px;"
             f" border: 1px solid {_styles.BORDER}; border-radius: 6px;"
@@ -699,8 +758,12 @@ class SummaryPanel(QWidget):
             f" QTreeWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
             f" QTreeWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
+        root = self._tree.invisibleRootItem()
+        for cat_idx in range(root.childCount()):
+            cat = root.child(cat_idx)
+            cat.setForeground(0, QBrush(QColor(_styles.ACCENT_LIGHT)))
+
         # Re-style the matplotlib figure and axes with the new theme colours
-        self._figure.set_facecolor(_styles.BG_PRIMARY)
-        self._style_axes()
+        self._refresh_plot_theme()
         self._canvas.draw_idle()
 
