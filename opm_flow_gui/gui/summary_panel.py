@@ -123,9 +123,7 @@ class SummaryPanel(QWidget):
 
         # --- tab widget ---
         self._tabs = QTabWidget()
-        self._tabs.setStyleSheet(
-            f"QTabWidget::pane {{ background-color: {BG_PRIMARY}; border: none; }}"
-        )
+        self._tabs.setStyleSheet(self._tabs_stylesheet())
         self._tabs.addTab(self._build_summary_tab(), "Summary")
         self._tabs.addTab(self._build_log_tab(), "Log Files")
         self._tabs.addTab(self._build_monitor_tab(), "System Monitor")
@@ -169,6 +167,7 @@ class SummaryPanel(QWidget):
         tb_layout.addWidget(self._btn_pop_out)
         tb_layout.addStretch()
         tb_layout.addWidget(self._chk_overlay)
+        tb_layout.addSpacing(12)
         tb_layout.addWidget(self._btn_resinsight)
 
         layout.addWidget(self._toolbar)
@@ -242,6 +241,24 @@ class SummaryPanel(QWidget):
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _tabs_stylesheet() -> str:
+        """Return the QSS stylesheet for the tab widget, using current theme colours."""
+        return (
+            f"QTabWidget::pane {{ background-color: {_styles.BG_PRIMARY}; border: none; }}"
+            f" QTabBar {{ background-color: transparent; }}"
+            f" QTabBar::tab {{ background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.TEXT_SECONDARY}; padding: 10px 20px;"
+            f" border: 1px solid {_styles.BORDER}; border-bottom: none;"
+            f" border-top-left-radius: 6px; border-top-right-radius: 6px;"
+            f" margin-right: 2px; font-weight: 500; }}"
+            f" QTabBar::tab:selected {{ background-color: {_styles.BG_PRIMARY};"
+            f" color: {_styles.ACCENT_LIGHT}; border-bottom: 2px solid {_styles.ACCENT}; }}"
+            f" QTabBar::tab:hover:!selected {{ background-color: {_styles.BG_SECONDARY};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
+            f" QTabBar::tab:disabled {{ color: {_styles.TEXT_MUTED}; }}"
+        )
 
     @staticmethod
     def _make_toolbar_button(text: str) -> QPushButton:
@@ -720,9 +737,7 @@ class SummaryPanel(QWidget):
             f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
             f" padding: 12px 12px 8px 12px; background-color: {_styles.BG_SECONDARY};"
         )
-        self._tabs.setStyleSheet(
-            f"QTabWidget::pane {{ background-color: {_styles.BG_PRIMARY}; border: none; }}"
-        )
+        self._tabs.setStyleSheet(self._tabs_stylesheet())
         self._toolbar.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
 
         # Toolbar widgets
@@ -767,5 +782,6 @@ class SummaryPanel(QWidget):
         self._refresh_plot_theme()
         self._canvas.draw_idle()
 
-        # Propagate theme update to the embedded log viewer
+        # Propagate theme update to the embedded log viewer and system monitor
         self._log_viewer.refresh_styles()
+        self._system_monitor.refresh_styles()

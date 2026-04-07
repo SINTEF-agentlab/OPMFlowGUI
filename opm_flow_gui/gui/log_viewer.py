@@ -298,6 +298,7 @@ class LogViewerPanel(QWidget):
             f" padding: 6px 8px; background-color: {_styles.BG_SECONDARY};"
         )
         step_layout.addWidget(steps_header)
+        self._steps_header = steps_header
 
         self._step_list = QListWidget()
         self._step_list.setStyleSheet(
@@ -347,6 +348,7 @@ class LogViewerPanel(QWidget):
             f" padding: 4px 8px; background-color: {_styles.BG_SECONDARY};"
         )
         warn_layout.addWidget(warn_header)
+        self._warn_header = warn_header
 
         self._warn_list = QListWidget()
         self._warn_list.setStyleSheet(
@@ -445,6 +447,10 @@ class LogViewerPanel(QWidget):
                 f" QPushButton:hover {{ background-color: {_styles.ACCENT};"
                 f" color: {_styles.TEXT_PRIMARY}; }}"
             )
+        self._steps_header.setStyleSheet(
+            f"font-size: 12px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
+            f" padding: 6px 8px; background-color: {_styles.BG_SECONDARY};"
+        )
         self._step_list.setStyleSheet(
             f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; font-size: 11px; }}"
@@ -460,6 +466,10 @@ class LogViewerPanel(QWidget):
             f" color: {_styles.TEXT_PRIMARY}; border: none;"
             f" selection-background-color: {_styles.ACCENT};"
             f" font-family: '{_mono.family()}'; font-size: {_mono.pointSize()}pt; }}"
+        )
+        self._warn_header.setStyleSheet(
+            f"font-size: 12px; font-weight: bold; color: {_styles.WARNING};"
+            f" padding: 4px 8px; background-color: {_styles.BG_SECONDARY};"
         )
         self._warn_list.setStyleSheet(
             f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
