@@ -197,6 +197,9 @@ def build_flow_command(
     if use_wsl:
         case_path = windows_path_to_wsl(run.case_path)
         output_dir = windows_path_to_wsl(run.output_dir)
+        # Binary paths may also be Windows-style (e.g. set via Browse button)
+        flow_binary = windows_path_to_wsl(flow_binary)
+        mpirun_binary = windows_path_to_wsl(mpirun_binary)
     else:
         case_path = run.case_path
         output_dir = run.output_dir

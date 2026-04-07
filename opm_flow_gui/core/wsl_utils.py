@@ -58,7 +58,8 @@ def windows_path_to_wsl(path: str) -> str:
     if m:
         drive = m.group(1).lower()
         rest = m.group(2).replace("\\", "/")
-        # Strip a trailing slash that would come from "C:\" root paths
-        return f"/mnt/{drive}/{rest}".rstrip("/") if rest else f"/mnt/{drive}"
+        if rest:
+            return f"/mnt/{drive}/{rest}"
+        return f"/mnt/{drive}"
     # Already UNIX-style or relative – normalise separators only
     return path.replace("\\", "/")

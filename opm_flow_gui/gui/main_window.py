@@ -385,6 +385,7 @@ class MainWindow(QMainWindow):
 
         new_config = dialog.get_config()
         old_flow_binary = self._config_manager.config.flow_binary
+        old_use_wsl = self._config_manager.config.use_wsl
         self._config_manager._config = new_config
         self._config_manager.save()
 
@@ -394,9 +395,12 @@ class MainWindow(QMainWindow):
         self._sim_runner._use_wsl = new_config.use_wsl
 
         # Invalidate cached flow options when the binary path or WSL flag changes
-        if new_config.flow_binary != old_flow_binary:
+        if new_config.flow_binary != old_flow_binary or new_config.use_wsl != old_use_wsl:
             from opm_flow_gui.core.simulation_runner import _flow_options_cache
-            keys_to_remove = [k for k in _flow_options_cache if k[0] == old_flow_binary]
+            keys_to_remove = [
+                k for k in _flow_options_cache
+                if k[0] == old_flow_binary or k[0] == new_config.flow_binary
+            ]
             for k in keys_to_remove:
                 _flow_options_cache.pop(k, None)
 
