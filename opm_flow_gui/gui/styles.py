@@ -273,6 +273,21 @@ def detect_system_theme() -> str:
         pass
     return "Light"
 
+
+def is_dark_theme(theme_name: str) -> bool:
+    """Return ``True`` if *theme_name* has a dark background (perceived luminance < 50 %).
+
+    An empty string (``AUTO_THEME``) is resolved via :func:`detect_system_theme`
+    before the brightness check is performed.
+    """
+    if not theme_name:
+        theme_name = detect_system_theme()
+    colors = THEMES.get(theme_name, THEMES[DEFAULT_THEME])
+    hex_bg = colors.bg_primary.lstrip("#")
+    r, g, b = int(hex_bg[0:2], 16), int(hex_bg[2:4], 16), int(hex_bg[4:6], 16)
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return luminance < 0.5
+
 # Active theme colours (module-level constants, set by apply_theme / _set_active_theme)
 _active: ThemeColors = THEMES[DEFAULT_THEME]
 
@@ -949,3 +964,13 @@ def apply_theme(app: QApplication, theme_name: str) -> None:
 
     app.setStyleSheet(build_stylesheet(colors))
     app.setPalette(_build_palette(colors))
+
+    # Hint the platform to adopt a matching dark or light colour scheme so
+    # that native UI chrome (e.g. the OS window title-bar on Windows 11 and
+    # macOS) follows the application theme.  setColorScheme() requires Qt 6.5+
+    # which is already declared as a minimum dependency.
+    try:
+        scheme = Qt.ColorScheme.Dark if is_dark_theme(theme_name) else Qt.ColorScheme.Light
+        app.styleHints().setColorScheme(scheme)
+    except AttributeError:
+        pass

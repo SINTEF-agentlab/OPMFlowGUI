@@ -30,7 +30,8 @@ from opm_flow_gui.gui.case_panel import CasePanel
 from opm_flow_gui.gui.run_dialog import RunDialog
 from opm_flow_gui.gui.runs_panel import RunsPanel
 from opm_flow_gui.gui.settings_dialog import SettingsDialog
-from opm_flow_gui.gui.styles import STYLESHEET, apply_theme
+from opm_flow_gui.gui import styles as _styles
+from opm_flow_gui.gui.styles import apply_theme
 from opm_flow_gui.gui.summary_panel import SummaryPanel
 
 logger = logging.getLogger(__name__)
@@ -70,7 +71,7 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("OPM Flow GUI")
         self.setMinimumSize(1200, 700)
-        self.setStyleSheet(STYLESHEET)
+        self.setStyleSheet(_styles.STYLESHEET)
 
         # --- Core managers ---------------------------------------------------
         self._config_manager = ConfigManager()
@@ -120,6 +121,10 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if isinstance(app, QApplication):
             apply_theme(app, config.theme)
+            # Sync the window-level stylesheet with the now-active theme so that
+            # child widgets (including the matplotlib canvas) inherit the correct
+            # colours from the nearest stylesheet ancestor.
+            self.setStyleSheet(_styles.STYLESHEET)
 
         # --- UI setup --------------------------------------------------------
         self._case_panel = CasePanel(self._case_manager)
@@ -468,6 +473,7 @@ class MainWindow(QMainWindow):
         app = QApplication.instance()
         if isinstance(app, QApplication):
             apply_theme(app, new_config.theme)
+            self.setStyleSheet(_styles.STYLESHEET)
 
         # Refresh inline stylesheets on all panels so they reflect the new theme
         self._case_panel.refresh_styles()
