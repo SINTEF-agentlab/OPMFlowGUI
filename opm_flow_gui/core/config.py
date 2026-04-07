@@ -24,7 +24,7 @@ class Config:
     output_base_path: str = ""
     search_directories: list[str] = field(default_factory=list)
     case_files: list[str] = field(default_factory=list)
-    theme: str = "Dark Purple"
+    theme: str = ""  # empty string = auto-detect from OS preference
     use_wsl: bool = field(default_factory=should_default_use_wsl)
 
     def to_dict(self) -> dict[str, Any]:
@@ -54,7 +54,7 @@ class Config:
             output_base_path=str(data.get("output_base_path", "")),
             search_directories=[str(d) for d in data.get("search_directories", [])],
             case_files=[str(f) for f in data.get("case_files", [])],
-            theme=str(data.get("theme", "Dark Purple")),
+            theme=str(data.get("theme", "")),
             use_wsl=use_wsl,
         )
 

@@ -41,18 +41,6 @@ from opm_flow_gui.core.summary_reader import SummaryReader
 from opm_flow_gui.gui.log_viewer import LogViewerPanel
 from opm_flow_gui.gui.system_monitor import SystemMonitorPanel
 import opm_flow_gui.gui.styles as _styles
-from opm_flow_gui.gui.styles import (
-    ACCENT,
-    ACCENT_HOVER,
-    ACCENT_LIGHT,
-    BG_PRIMARY,
-    BG_SECONDARY,
-    BG_TERTIARY,
-    BORDER,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -155,8 +143,8 @@ class SummaryPanel(QWidget):
         # --- header ---
         self._header = QLabel("Results")
         self._header.setStyleSheet(
-            f"font-size: 16px; font-weight: bold; color: {TEXT_PRIMARY};"
-            f" padding: 12px 12px 8px 12px; background-color: {BG_SECONDARY};"
+            f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
+            f" padding: 12px 12px 8px 12px; background-color: {_styles.BG_SECONDARY};"
         )
         root.addWidget(self._header)
 
@@ -178,7 +166,7 @@ class SummaryPanel(QWidget):
 
         # ---- toolbar ----
         self._toolbar = QWidget()
-        self._toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
+        self._toolbar.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
         tb_layout = QHBoxLayout(self._toolbar)
         tb_layout.setContentsMargins(8, 6, 8, 6)
         tb_layout.setSpacing(8)
@@ -190,7 +178,7 @@ class SummaryPanel(QWidget):
         self._btn_pop_out.setEnabled(False)
         self._chk_overlay = QCheckBox("Overlay multiple vectors")
         self._chk_overlay.setStyleSheet(
-            f"QCheckBox {{ color: {TEXT_SECONDARY}; font-size: 12px;"
+            f"QCheckBox {{ color: {_styles.TEXT_SECONDARY}; font-size: 12px;"
             f" background: transparent; }}"
         )
         self._chk_overlay.setChecked(False)
@@ -225,8 +213,8 @@ class SummaryPanel(QWidget):
         self._filter_edit.setClearButtonEnabled(True)
         self._filter_edit.setStyleSheet(
             f"QLineEdit {{ margin: 6px 8px; padding: 6px 10px;"
-            f" border: 1px solid {BORDER}; border-radius: 6px;"
-            f" background-color: {BG_TERTIARY}; color: {TEXT_PRIMARY}; }}"
+            f" border: 1px solid {_styles.BORDER}; border-radius: 6px;"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_PRIMARY}; }}"
         )
         left_layout.addWidget(self._filter_edit)
 
@@ -235,11 +223,12 @@ class SummaryPanel(QWidget):
         self._tree.setRootIsDecorated(True)
         self._tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
         self._tree.setStyleSheet(
-            f"QTreeWidget {{ background-color: {BG_SECONDARY}; border: none;"
+            f"QTreeWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; }}"
             f" QTreeWidget::item {{ padding: 4px 6px; }}"
-            f" QTreeWidget::item:selected {{ background-color: {BG_TERTIARY}; }}"
-            f" QTreeWidget::item:hover {{ background-color: {BG_TERTIARY}; }}"
+            f" QTreeWidget::item:selected {{ background-color: {_styles.SELECTION};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
+            f" QTreeWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         left_layout.addWidget(self._tree, 1)
 
@@ -250,7 +239,7 @@ class SummaryPanel(QWidget):
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(0)
 
-        self._figure = Figure(facecolor=BG_PRIMARY)
+        self._figure = Figure(facecolor=_styles.BG_PRIMARY)
         self._canvas = FigureCanvasQTAgg(self._figure)
         self._canvas.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding,
@@ -305,12 +294,12 @@ class SummaryPanel(QWidget):
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(
             f"QPushButton {{ padding: 4px 12px; border-radius: 4px;"
-            f" background-color: {BG_TERTIARY}; color: {TEXT_SECONDARY};"
-            f" border: 1px solid {BORDER}; font-size: 12px; }}"
-            f" QPushButton:hover {{ background-color: {ACCENT};"
-            f" color: {TEXT_PRIMARY}; }}"
-            f" QPushButton:disabled {{ background-color: {BG_TERTIARY};"
-            f" color: {TEXT_MUTED}; }}"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_SECONDARY};"
+            f" border: 1px solid {_styles.BORDER}; font-size: 12px; }}"
+            f" QPushButton:hover {{ background-color: {_styles.ACCENT};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
+            f" QPushButton:disabled {{ background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.TEXT_MUTED}; }}"
         )
         return btn
 
@@ -849,7 +838,8 @@ class SummaryPanel(QWidget):
             f"QTreeWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; }}"
             f" QTreeWidget::item {{ padding: 4px 6px; }}"
-            f" QTreeWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QTreeWidget::item:selected {{ background-color: {_styles.SELECTION};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
             f" QTreeWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         root = self._tree.invisibleRootItem()

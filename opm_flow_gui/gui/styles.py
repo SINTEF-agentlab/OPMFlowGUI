@@ -1,12 +1,14 @@
-"""Modern dark-themed Qt stylesheet for OPM Flow GUI.
+"""Qt stylesheet and theming utilities for OPM Flow GUI.
 
-Provides a cohesive, professional dark colour scheme built around a purple
-accent.  All colour values are exposed as module-level constants so that
-other parts of the application can reference them without hard-coding hex
-strings.
+Provides cohesive colour schemes (dark and light) built around configurable
+accent colours.  All colour values are exposed as module-level constants so
+that other parts of the application can reference them without hard-coding
+hex strings.
 
 Multiple named themes are available via :data:`THEMES` and
-:func:`apply_theme`.
+:func:`apply_theme`.  Pass an empty string to :func:`apply_theme` (or set
+:data:`Config.theme` to ``""`` in a fresh config) to auto-detect the
+operating-system colour-scheme preference.
 """
 
 import sys
@@ -180,9 +182,96 @@ THEMES: dict[str, ThemeColors] = {
         border="#7dd3fc",
         selection="#bae6fd",
     ),
+    "Solarized Light": ThemeColors(
+        bg_primary="#fdf6e3",
+        bg_secondary="#eee8d5",
+        bg_tertiary="#ddd6c2",
+        accent="#268bd2",
+        accent_hover="#2aa198",
+        accent_light="#6c71c4",
+        text_primary="#073642",
+        text_secondary="#586e75",
+        text_muted="#93a1a1",
+        success="#859900",
+        warning="#b58900",
+        error="#dc322f",
+        border="#c9c2ab",
+        selection="#c2bca0",
+    ),
+    "Nord": ThemeColors(
+        bg_primary="#2e3440",
+        bg_secondary="#3b4252",
+        bg_tertiary="#434c5e",
+        accent="#88c0d0",
+        accent_hover="#81a1c1",
+        accent_light="#8fbcbb",
+        text_primary="#eceff4",
+        text_secondary="#d8dee9",
+        text_muted="#4c566a",
+        success="#a3be8c",
+        warning="#ebcb8b",
+        error="#bf616a",
+        border="#4c566a",
+        selection="#3d4f63",
+    ),
+    "Dracula": ThemeColors(
+        bg_primary="#282a36",
+        bg_secondary="#1e1f29",
+        bg_tertiary="#343746",
+        accent="#bd93f9",
+        accent_hover="#caa9fa",
+        accent_light="#ff79c6",
+        text_primary="#f8f8f2",
+        text_secondary="#a0a0b8",
+        text_muted="#6272a4",
+        success="#50fa7b",
+        warning="#ffb86c",
+        error="#ff5555",
+        border="#44475a",
+        selection="#44475a",
+    ),
+    "Catppuccin Mocha": ThemeColors(
+        bg_primary="#1e1e2e",
+        bg_secondary="#181825",
+        bg_tertiary="#313244",
+        accent="#cba6f7",
+        accent_hover="#b4befe",
+        accent_light="#f5c2e7",
+        text_primary="#cdd6f4",
+        text_secondary="#a6adc8",
+        text_muted="#585b70",
+        success="#a6e3a1",
+        warning="#f9e2af",
+        error="#f38ba8",
+        border="#45475a",
+        selection="#45475a",
+    ),
 }
 
 DEFAULT_THEME: str = "Dark Purple"
+
+# Sentinel value stored in Config.theme for "auto-detect from OS".
+AUTO_THEME: str = ""
+
+
+def detect_system_theme() -> str:
+    """Return a theme name that matches the current OS colour-scheme preference.
+
+    Detects dark/light mode via :func:`QGuiApplication.styleHints` (available
+    from Qt 6.5 / PySide6 6.5).  Returns ``"Light"`` when the preference is
+    light *or* when detection is unavailable.  Returns ``"Dark Purple"`` for a
+    dark preference.
+    """
+    try:
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QGuiApplication
+        scheme = QGuiApplication.styleHints().colorScheme()
+        if scheme == Qt.ColorScheme.Dark:
+            return "Dark Purple"
+    except (AttributeError, RuntimeError):
+        # Qt < 6.5 or no QGuiApplication instance yet – fall through to Light.
+        pass
+    return "Light"
 
 # Active theme colours (module-level constants, set by apply_theme / _set_active_theme)
 _active: ThemeColors = THEMES[DEFAULT_THEME]
@@ -713,6 +802,28 @@ QRadioButton::indicator:disabled {{
     background-color: {c.bg_tertiary};
     border-color: {c.bg_tertiary};
 }}
+
+/* ===== Text Edit / Plain Text Edit ===== */
+QTextEdit,
+QPlainTextEdit {{
+    background-color: {c.bg_primary};
+    color: {c.text_primary};
+    border: 1px solid {c.border};
+    border-radius: 6px;
+    selection-background-color: {c.selection};
+    selection-color: {c.text_primary};
+}}
+
+/* ===== Status Bar ===== */
+QStatusBar {{
+    background-color: {c.bg_secondary};
+    color: {c.text_primary};
+    border-top: 1px solid {c.border};
+}}
+
+QStatusBar::item {{
+    border: none;
+}}
 """
 
 
@@ -773,17 +884,29 @@ def _build_palette(c: ThemeColors) -> QPalette:
 
 
 def apply_style(app: QApplication) -> None:
-    """Apply the default dark-purple theme stylesheet and palette to *app*."""
-    apply_theme(app, DEFAULT_THEME)
+    """Apply the default theme to *app*.
+
+    If no configuration has been saved yet the OS colour-scheme preference is
+    detected; the application defaults to a light theme when detection fails
+    or returns an unknown preference (per UX guidelines).
+    """
+    apply_theme(app, AUTO_THEME)
 
 
 def apply_theme(app: QApplication, theme_name: str) -> None:
     """Apply the named theme to *app* (stylesheet + palette + font).
 
+    Pass an empty string (``AUTO_THEME``) to auto-detect the OS colour-scheme
+    preference.  Falls back to ``"Light"`` when detection fails or returns an
+    unknown preference.
+
     Also updates the module-level colour constants so that any code that
     re-reads them (e.g. via ``import opm_flow_gui.gui.styles as s; s.ACCENT``)
     will obtain the new values when refreshing widget stylesheets.
     """
+    if not theme_name:
+        theme_name = detect_system_theme()
+
     colors = THEMES.get(theme_name, THEMES[DEFAULT_THEME])
 
     # Update module-level colour constants so refresh_styles() calls can

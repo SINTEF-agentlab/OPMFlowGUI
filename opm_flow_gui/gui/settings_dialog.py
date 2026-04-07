@@ -27,16 +27,8 @@ from PySide6.QtWidgets import (
 
 from opm_flow_gui.core.config import Config
 from opm_flow_gui.core.wsl_utils import is_windows
-from opm_flow_gui.gui.styles import (
-    ACCENT,
-    ACCENT_LIGHT,
-    BG_SECONDARY,
-    BG_TERTIARY,
-    BORDER,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-    THEMES,
-)
+import opm_flow_gui.gui.styles as _styles
+from opm_flow_gui.gui.styles import THEMES
 
 
 class SettingsDialog(QDialog):
@@ -62,7 +54,7 @@ class SettingsDialog(QDialog):
         # ---- header ----
         header = QLabel("\u2699  Settings")
         header.setStyleSheet(
-            f"font-size: 15px; font-weight: bold; color: {ACCENT_LIGHT};"
+            f"font-size: 15px; font-weight: bold; color: {_styles.ACCENT_LIGHT};"
             " background: transparent; padding-bottom: 4px;"
         )
         root.addWidget(header)
@@ -111,13 +103,15 @@ class SettingsDialog(QDialog):
         row.setSpacing(8)
         lbl = QLabel("Theme:")
         lbl.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-weight: 600; background: transparent;"
+            f"color: {_styles.TEXT_SECONDARY}; font-weight: 600; background: transparent;"
         )
         row.addWidget(lbl)
 
         self._theme_combo = QComboBox()
         self._theme_combo.addItems(list(THEMES.keys()))
-        self._theme_combo.setCurrentText(self._config.theme)
+        # If the saved theme is "" (auto-detect), show the currently active theme.
+        display_theme = self._config.theme or _styles.detect_system_theme()
+        self._theme_combo.setCurrentText(display_theme)
         self._theme_combo.setToolTip("Change the application colour theme")
         row.addWidget(self._theme_combo, 1)
         row.addStretch()
@@ -180,7 +174,7 @@ class SettingsDialog(QDialog):
                 "mount-point paths (/mnt/<drive>/…) before being passed to flow."
             )
             self._chk_wsl.setStyleSheet(
-                f"QCheckBox {{ color: {TEXT_SECONDARY}; font-weight: 600;"
+                f"QCheckBox {{ color: {_styles.TEXT_SECONDARY}; font-weight: 600;"
                 " background: transparent; }"
             )
             layout.addWidget(self._chk_wsl)
@@ -211,10 +205,10 @@ class SettingsDialog(QDialog):
         btn_remove.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_remove.setToolTip("Remove the selected directory from the list")
         btn_remove.setStyleSheet(
-            f"QPushButton {{ background-color: {BG_TERTIARY};"
-            f" color: {TEXT_PRIMARY}; border: 1px solid {BORDER}; }}"
-            f" QPushButton:hover {{ background-color: {BG_SECONDARY};"
-            f" border-color: {ACCENT}; }}"
+            f"QPushButton {{ background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.TEXT_PRIMARY}; border: 1px solid {_styles.BORDER}; }}"
+            f" QPushButton:hover {{ background-color: {_styles.BG_SECONDARY};"
+            f" border-color: {_styles.ACCENT}; }}"
         )
         btn_remove.clicked.connect(self._remove_search_dir)
         btn_row.addWidget(btn_remove)
@@ -242,7 +236,7 @@ class SettingsDialog(QDialog):
         label = QLabel(label_text)
         label.setFixedWidth(135)
         label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-weight: 600;"
+            f"color: {_styles.TEXT_SECONDARY}; font-weight: 600;"
             " background: transparent;"
         )
         row.addWidget(label)
@@ -255,10 +249,10 @@ class SettingsDialog(QDialog):
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(
             f"QPushButton {{ padding: 6px 12px; border-radius: 6px;"
-            f" background-color: {BG_TERTIARY}; color: {TEXT_PRIMARY};"
-            f" border: 1px solid {BORDER}; }}"
-            f" QPushButton:hover {{ background-color: {BG_SECONDARY};"
-            f" border-color: {ACCENT}; }}"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_PRIMARY};"
+            f" border: 1px solid {_styles.BORDER}; }}"
+            f" QPushButton:hover {{ background-color: {_styles.BG_SECONDARY};"
+            f" border-color: {_styles.ACCENT}; }}"
         )
         btn.clicked.connect(browse_slot)
         row.addWidget(btn)

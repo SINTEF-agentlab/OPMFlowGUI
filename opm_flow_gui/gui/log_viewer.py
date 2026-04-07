@@ -386,7 +386,8 @@ class LogViewerPanel(QWidget):
             f" outline: none; font-size: 11px; }}"
             f" QListWidget::item {{ padding: 4px 8px;"
             f" border-bottom: 1px solid {_styles.BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.SELECTION};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
             f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         step_layout.addWidget(self._step_list, 1)
@@ -436,7 +437,8 @@ class LogViewerPanel(QWidget):
             f" outline: none; font-size: 11px; }}"
             f" QListWidget::item {{ padding: 3px 8px;"
             f" border-bottom: 1px solid {_styles.BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.SELECTION};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
             f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         warn_layout.addWidget(self._warn_list, 1)
@@ -536,7 +538,8 @@ class LogViewerPanel(QWidget):
             f" outline: none; font-size: 11px; }}"
             f" QListWidget::item {{ padding: 4px 8px;"
             f" border-bottom: 1px solid {_styles.BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.SELECTION};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
             f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         _mono = _monospace_font()
@@ -556,7 +559,8 @@ class LogViewerPanel(QWidget):
             f" outline: none; font-size: 11px; }}"
             f" QListWidget::item {{ padding: 3px 8px;"
             f" border-bottom: 1px solid {_styles.BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.SELECTION};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
             f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         self._empty_label.setStyleSheet(
