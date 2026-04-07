@@ -246,6 +246,7 @@ class SummaryPanel(QWidget):
         )
         self._axes = self._figure.add_subplot(111)
         self._style_axes()
+        self._canvas.draw()  # render the themed background before first display
 
         right_layout.addWidget(self._canvas, 1)
 
@@ -743,6 +744,7 @@ class SummaryPanel(QWidget):
                 fig.tight_layout()
 
         layout.addWidget(canvas)
+        canvas.draw()  # render the themed background before the dialog appears
         dlg.show()
 
     # ------------------------------------------------------------------
@@ -856,7 +858,7 @@ class SummaryPanel(QWidget):
 
         # Re-style the matplotlib figure and axes with the new theme colours
         self._refresh_plot_theme()
-        self._canvas.draw_idle()
+        self._canvas.draw()  # synchronous redraw so the new colours show immediately
 
         # Propagate theme update to the embedded log viewer and system monitor
         self._log_viewer.refresh_styles()
