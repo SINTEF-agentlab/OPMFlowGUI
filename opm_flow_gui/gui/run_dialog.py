@@ -33,18 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from opm_flow_gui.gui.styles import (
-    ACCENT,
-    ACCENT_HOVER,
-    ACCENT_LIGHT,
-    BG_PRIMARY,
-    BG_SECONDARY,
-    BG_TERTIARY,
-    BORDER,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-)
+from opm_flow_gui.gui import styles as _styles
 
 
 class RunDialog(QDialog):
@@ -81,7 +70,7 @@ class RunDialog(QDialog):
         # ---- header ----
         header = QLabel(f"\u25b6  {self._case_name}")
         header.setStyleSheet(
-            f"font-size: 18px; font-weight: bold; color: {ACCENT_LIGHT};"
+            f"font-size: 18px; font-weight: bold; color: {_styles.ACCENT_LIGHT};"
             " background: transparent; padding-bottom: 4px;"
         )
         root.addWidget(header)
@@ -117,7 +106,7 @@ class RunDialog(QDialog):
         self._edit_name.setToolTip("A short descriptive name for this simulation run")
         name_label = QLabel("Run Name:")
         name_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-weight: 600; background: transparent;"
+            f"color: {_styles.TEXT_SECONDARY}; font-weight: 600; background: transparent;"
         )
         layout.addRow(name_label, self._edit_name)
 
@@ -128,7 +117,7 @@ class RunDialog(QDialog):
         self._spin_mpi.setToolTip("Number of MPI processes to launch")
         mpi_label = QLabel("MPI Processes:")
         mpi_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-weight: 600; background: transparent;"
+            f"color: {_styles.TEXT_SECONDARY}; font-weight: 600; background: transparent;"
         )
         layout.addRow(mpi_label, self._spin_mpi)
 
@@ -148,17 +137,17 @@ class RunDialog(QDialog):
         btn_browse.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_browse.setStyleSheet(
             f"QPushButton {{ padding: 8px 14px; border-radius: 6px;"
-            f" background-color: {BG_TERTIARY}; color: {TEXT_PRIMARY};"
-            f" border: 1px solid {BORDER}; }}"
-            f" QPushButton:hover {{ background-color: {BG_SECONDARY};"
-            f" border-color: {ACCENT}; }}"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_PRIMARY};"
+            f" border: 1px solid {_styles.BORDER}; }}"
+            f" QPushButton:hover {{ background-color: {_styles.BG_SECONDARY};"
+            f" border-color: {_styles.ACCENT}; }}"
         )
         btn_browse.clicked.connect(self._browse_output_dir)
         dir_row.addWidget(btn_browse)
 
         dir_label = QLabel("Output Directory:")
         dir_label.setStyleSheet(
-            f"color: {TEXT_SECONDARY}; font-weight: 600; background: transparent;"
+            f"color: {_styles.TEXT_SECONDARY}; font-weight: 600; background: transparent;"
         )
         layout.addRow(dir_label, dir_row)
 
@@ -184,10 +173,10 @@ class RunDialog(QDialog):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setStyleSheet(
                 f"QPushButton {{ padding: 6px 14px; border-radius: 6px;"
-                f" background-color: {BG_TERTIARY}; color: {TEXT_PRIMARY};"
-                f" border: 1px solid {BORDER}; font-size: 12px; }}"
-                f" QPushButton:hover {{ background-color: {BG_SECONDARY};"
-                f" border-color: {ACCENT}; }}"
+                f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_PRIMARY};"
+                f" border: 1px solid {_styles.BORDER}; font-size: 12px; }}"
+                f" QPushButton:hover {{ background-color: {_styles.BG_SECONDARY};"
+                f" border-color: {_styles.ACCENT}; }}"
             )
             btn.clicked.connect(slot)
             toolbar.addWidget(btn)
@@ -280,7 +269,7 @@ class RunDialog(QDialog):
             label = QLabel(name)
             label.setToolTip(description)
             label.setStyleSheet(
-                f"color: {TEXT_SECONDARY}; font-weight: 600;"
+                f"color: {_styles.TEXT_SECONDARY}; font-weight: 600;"
                 " background: transparent;"
             )
 

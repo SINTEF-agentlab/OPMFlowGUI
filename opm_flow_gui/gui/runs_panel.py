@@ -354,7 +354,8 @@ class RunsPanel(QWidget):
             f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; }}"
             f" QListWidget::item {{ border-bottom: 1px solid {_styles.BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.SELECTION};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
             f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         layout.addWidget(self._list, 1)
@@ -449,7 +450,8 @@ class RunsPanel(QWidget):
             f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; }}"
             f" QListWidget::item {{ border-bottom: 1px solid {_styles.BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.SELECTION};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
             f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         self._empty_label.setStyleSheet(

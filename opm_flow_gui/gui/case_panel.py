@@ -140,7 +140,7 @@ class _CaseItemWidget(QWidget):
             badge = QLabel(badge_text)
             badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
             badge.setStyleSheet(
-                f"background-color: {_styles.ACCENT}; color: {_styles.TEXT_PRIMARY};"
+                f"background-color: {_styles.ACCENT}; color: #ffffff;"
                 " border-radius: 8px; font-size: 11px; font-weight: bold;"
                 " padding: 2px 6px; min-width: 18px;"
             )
@@ -323,10 +323,10 @@ class CasePanel(QWidget):
             f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; }}"
             f" QListWidget::item {{ border-bottom: 1px solid {_styles.BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.SELECTION};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
             f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
-        content_layout.addWidget(self._list, 1)
 
         self._stacked.addWidget(content_widget)
 
@@ -403,7 +403,8 @@ class CasePanel(QWidget):
             f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; }}"
             f" QListWidget::item {{ border-bottom: 1px solid {_styles.BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.SELECTION};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
             f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
 
