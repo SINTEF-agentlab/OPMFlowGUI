@@ -1,18 +1,19 @@
 """System resource monitor panel for OPM Flow GUI.
 
 Displays live CPU core utilisation, memory usage and a list of running
-OPM Flow processes in a dashboard-style layout.  Data is refreshed every
-two seconds via a :class:`~PySide6.QtCore.QTimer`.
+OPM Flow processes in a dashboard-style layout.  Data is collected in a
+background :class:`~PySide6.QtCore.QThread` to avoid blocking the GUI on
+Windows where :mod:`psutil` process enumeration can be slow.
 """
 
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 
 import psutil
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -41,6 +42,58 @@ def _pct_color(pct: float) -> str:
     if pct < 85:
         return _styles.WARNING
     return _styles.ERROR
+
+
+# ---------------------------------------------------------------------------
+# Background worker – runs psutil calls off the GUI thread
+# ---------------------------------------------------------------------------
+
+class _MonitorWorker(QObject):
+    """Collects system metrics in a background thread and emits the results."""
+
+    data_ready = Signal(object)  # emits a dict with collected metrics
+
+    @Slot()
+    def collect(self) -> None:
+        """Gather CPU, memory and OPM Flow process data, then emit *data_ready*."""
+        result: dict = {"cpu_per": [], "cpu_avg": 0.0, "mem": None, "procs": []}
+
+        try:
+            per_cpu: list[float] = psutil.cpu_percent(interval=None, percpu=True)  # type: ignore[assignment]
+            result["cpu_per"] = per_cpu
+            result["cpu_avg"] = sum(per_cpu) / len(per_cpu) if per_cpu else 0.0
+        except Exception:
+            pass
+
+        try:
+            result["mem"] = psutil.virtual_memory()
+        except Exception:
+            pass
+
+        try:
+            flow_procs: list[dict] = []
+            for proc in psutil.process_iter(
+                ["pid", "name", "cpu_percent", "memory_info", "status"]
+            ):
+                try:
+                    name = (proc.info.get("name") or "").lower()
+                    if name == "flow" or name.startswith("flow_") or name == "opm-flow":
+                        mem_info = proc.info.get("memory_info")
+                        mem_mb = mem_info.rss / (1024 ** 2) if mem_info else 0.0
+                        flow_procs.append({
+                            "pid": proc.info.get("pid", ""),
+                            "name": proc.info.get("name", ""),
+                            "cpu": proc.info.get("cpu_percent") or 0.0,
+                            "mem_mb": mem_mb,
+                            "status": proc.info.get("status", ""),
+                        })
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+            result["procs"] = flow_procs
+        except Exception:
+            pass
+
+        self.data_ready.emit(result)
 
 
 class _MetricCard(QFrame):
@@ -184,12 +237,20 @@ class SystemMonitorPanel(QWidget):
         self._cpu_bars: list[_CpuCoreBar] = []
         self._setup_ui()
 
+        # Background thread for psutil data collection (avoids GUI freezes on Windows)
+        self._worker_thread = QThread(self)
+        self._worker = _MonitorWorker()
+        self._worker.moveToThread(self._worker_thread)
+        self._worker.data_ready.connect(self._on_data_ready)
+        self._worker_thread.start()
+
+        # Timer fires on the GUI thread and triggers the worker via a queued connection
         self._timer = QTimer(self)
         self._timer.setInterval(_REFRESH_INTERVAL_MS)
-        self._timer.timeout.connect(self._refresh)
+        self._timer.timeout.connect(self._worker.collect)
         self._timer.start()
-        # Initial populate
-        self._refresh()
+        # Initial populate (queued so the thread is ready)
+        QTimer.singleShot(0, self._worker.collect)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -310,79 +371,42 @@ class SystemMonitorPanel(QWidget):
         root.addWidget(self._proc_section, 1)
 
     # ------------------------------------------------------------------
-    # Refresh logic
+    # Slot – receives results from the background worker
     # ------------------------------------------------------------------
 
-    def _refresh(self) -> None:
-        """Collect system metrics and update all widgets."""
-        self._update_cpu()
-        self._update_memory()
-        self._update_processes()
-
-    def _update_cpu(self) -> None:
-        try:
-            per_cpu = psutil.cpu_percent(interval=None, percpu=True)
-        except Exception:
-            return
-
+    @Slot(object)
+    def _on_data_ready(self, data: dict) -> None:
+        """Update all widgets from data collected by *_MonitorWorker*."""
+        # CPU
+        per_cpu: list[float] = data.get("cpu_per", [])
         for i, bar in enumerate(self._cpu_bars):
             if i < len(per_cpu):
                 bar.update_value(per_cpu[i])
-
-        avg = sum(per_cpu) / len(per_cpu) if per_cpu else 0.0
+        avg: float = data.get("cpu_avg", 0.0)
         self._card_cpu_avg.set_value(f"{avg:.0f}%", _pct_color(avg))
         self._card_cpu_avg.set_sub(f"{len(per_cpu)} logical cores")
 
-    def _update_memory(self) -> None:
-        try:
-            mem = psutil.virtual_memory()
-        except Exception:
-            return
+        # Memory
+        mem = data.get("mem")
+        if mem is not None:
+            used_gb = mem.used / (1024 ** 3)
+            avail_gb = mem.available / (1024 ** 3)
+            total_gb = mem.total / (1024 ** 3)
+            self._card_mem_used.set_value(f"{used_gb:.1f} GB", _pct_color(mem.percent))
+            self._card_mem_used.set_sub(f"{mem.percent:.0f}% of {total_gb:.1f} GB")
+            self._card_mem_avail.set_value(f"{avail_gb:.1f} GB")
+            self._card_mem_avail.set_sub(f"{(100 - mem.percent):.0f}% free")
 
-        used_gb = mem.used / (1024 ** 3)
-        avail_gb = mem.available / (1024 ** 3)
-        total_gb = mem.total / (1024 ** 3)
-
-        self._card_mem_used.set_value(f"{used_gb:.1f} GB", _pct_color(mem.percent))
-        self._card_mem_used.set_sub(f"{mem.percent:.0f}% of {total_gb:.1f} GB")
-
-        self._card_mem_avail.set_value(f"{avail_gb:.1f} GB")
-        self._card_mem_avail.set_sub(f"{(100 - mem.percent):.0f}% free")
-
-    def _update_processes(self) -> None:
-        flow_procs: list[dict] = []
-        try:
-            for proc in psutil.process_iter(["pid", "name", "cpu_percent", "memory_info", "status"]):
-                try:
-                    name = (proc.info.get("name") or "").lower()
-                    # Match the OPM Flow binary (typically "flow") precisely:
-                    # exact match, or suffixes like "flow_mpifarm".
-                    # Avoid false positives like "workflow" or "overflow".
-                    if name == "flow" or name.startswith("flow_") or name == "opm-flow":
-                        mem_info = proc.info.get("memory_info")
-                        mem_mb = mem_info.rss / (1024 ** 2) if mem_info else 0.0
-                        flow_procs.append({
-                            "pid": proc.info.get("pid", ""),
-                            "name": proc.info.get("name", ""),
-                            "cpu": proc.info.get("cpu_percent") or 0.0,
-                            "mem_mb": mem_mb,
-                            "status": proc.info.get("status", ""),
-                        })
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
-        except Exception:
-            pass
-
+        # OPM Flow processes
+        flow_procs: list[dict] = data.get("procs", [])
         count = len(flow_procs)
         self._card_flow_count.set_value(
             str(count),
             _styles.ACCENT if count > 0 else _styles.TEXT_MUTED,
         )
-        self._card_flow_count.set_sub(
-            "process" if count == 1 else "processes"
-        )
+        self._card_flow_count.set_sub("process" if count == 1 else "processes")
 
-        self._proc_table.setRowCount(len(flow_procs))
+        self._proc_table.setRowCount(count)
         has_procs = bool(flow_procs)
         self._proc_table.setVisible(has_procs)
         self._no_proc_label.setVisible(not has_procs)
@@ -422,6 +446,13 @@ class SystemMonitorPanel(QWidget):
     def stop(self) -> None:
         """Stop the refresh timer (called when the tab is hidden)."""
         self._timer.stop()
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        """Stop the timer and worker thread on close."""
+        self._timer.stop()
+        self._worker_thread.quit()
+        self._worker_thread.wait(2000)
+        super().closeEvent(event)
 
     def refresh_styles(self) -> None:
         """Re-apply inline stylesheets using the current active theme colours."""
