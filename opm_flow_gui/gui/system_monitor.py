@@ -32,7 +32,7 @@ import opm_flow_gui.gui.styles as _styles
 
 logger = logging.getLogger(__name__)
 
-_REFRESH_INTERVAL_MS = 2000
+_REFRESH_INTERVAL_MS = 5000
 
 
 def _pct_color(pct: float) -> str:
@@ -169,6 +169,7 @@ class _CpuCoreBar(QWidget):
 
     def __init__(self, core_index: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._last_color: str = ""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 1, 0, 1)
         layout.setSpacing(6)
@@ -206,11 +207,13 @@ class _CpuCoreBar(QWidget):
         self._bar.setValue(ipct)
         self._pct_label.setText(f"{ipct}%")
         color = _pct_color(pct)
-        self._bar.setStyleSheet(
-            f"QProgressBar {{ background-color: {_styles.BG_TERTIARY}; border: none;"
-            f" border-radius: 5px; }}"
-            f" QProgressBar::chunk {{ background-color: {color}; border-radius: 5px; }}"
-        )
+        if color != self._last_color:
+            self._last_color = color
+            self._bar.setStyleSheet(
+                f"QProgressBar {{ background-color: {_styles.BG_TERTIARY}; border: none;"
+                f" border-radius: 5px; }}"
+                f" QProgressBar::chunk {{ background-color: {color}; border-radius: 5px; }}"
+            )
 
     def refresh_styles(self) -> None:
         """Re-apply inline stylesheets using the current active theme colours."""
@@ -219,6 +222,7 @@ class _CpuCoreBar(QWidget):
         )
         pct = self._bar.value()
         color = _pct_color(pct)
+        self._last_color = color  # resync cache with the newly applied stylesheet
         self._bar.setStyleSheet(
             f"QProgressBar {{ background-color: {_styles.BG_TERTIARY}; border: none;"
             f" border-radius: 5px; }}"

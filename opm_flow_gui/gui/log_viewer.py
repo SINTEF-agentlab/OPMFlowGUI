@@ -218,10 +218,13 @@ def _parse_log(content: str) -> tuple[list[StepInfo], list[WarningEntry]]:
 # ---------------------------------------------------------------------------
 
 class _FileLoaderWorker(QObject):
-    """Reads and parses a log file in a background thread.
+    """Reads and parses log files in a persistent background thread.
 
-    For files larger than *_MAX_DISPLAY_CHARS*, only the tail of the file is
-    loaded into the text view to avoid a long ``setPlainText()`` freeze.
+    Requests are submitted via the ``load(request_id, path)`` slot, which is
+    invoked through a queued connection from the GUI thread so it always runs
+    on the worker's dedicated thread.  For files larger than
+    *_MAX_DISPLAY_CHARS*, only the tail is displayed to avoid a long
+    ``setPlainText()`` freeze.
     """
 
     # Emits (request_id, display_content, truncated, steps, warnings)
@@ -229,17 +232,13 @@ class _FileLoaderWorker(QObject):
     # Emits (request_id, error_message)
     error: Signal = Signal(int, str)
 
-    def __init__(self, request_id: int, path: str) -> None:
-        super().__init__()
-        self._request_id = request_id
-        self._path = path
-
-    @Slot()
-    def run(self) -> None:
+    @Slot(int, str)
+    def load(self, request_id: int, path: str) -> None:
+        """Read *path*, parse it, and emit *finished* or *error*."""
         try:
-            content = Path(self._path).read_text(encoding="utf-8", errors="replace")
+            content = Path(path).read_text(encoding="utf-8", errors="replace")
         except OSError as exc:
-            self.error.emit(self._request_id, str(exc))
+            self.error.emit(request_id, str(exc))
             return
 
         truncated = False
@@ -254,7 +253,7 @@ class _FileLoaderWorker(QObject):
                 display_content = display_content[newline_pos + 1:]
 
         steps, warnings = _parse_log(content)
-        self.finished.emit(self._request_id, display_content, truncated, steps, warnings)
+        self.finished.emit(request_id, display_content, truncated, steps, warnings)
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +265,11 @@ class LogViewerPanel(QWidget):
 
     # Auto-reload interval when a simulation is running (milliseconds)
     _AUTO_RELOAD_INTERVAL_MS = 5000
+
+    # Internal signal used to send a load request to the background worker.
+    # Using a signal (rather than QMetaObject.invokeMethod) guarantees a
+    # proper queued cross-thread connection and keeps Python references alive.
+    _load_requested: Signal = Signal(int, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -283,6 +287,18 @@ class LogViewerPanel(QWidget):
         self._auto_reload_timer = QTimer(self)
         self._auto_reload_timer.setInterval(self._AUTO_RELOAD_INTERVAL_MS)
         self._auto_reload_timer.timeout.connect(self._auto_reload)
+
+        # Persistent background thread for file I/O – avoids the GC and
+        # thread-lifetime issues that arise when creating a new QThread per
+        # request.  The worker lives on _loader_thread for its whole lifetime.
+        self._loader_thread = QThread(self)
+        self._loader_worker = _FileLoaderWorker()
+        self._loader_worker.moveToThread(self._loader_thread)
+        # Queued connection: _load_requested fires on GUI thread, load() runs on worker thread
+        self._load_requested.connect(self._loader_worker.load)
+        self._loader_worker.finished.connect(self._on_file_loaded)
+        self._loader_worker.error.connect(self._on_file_load_error)
+        self._loader_thread.start()
 
         self._setup_ui()
         self._connect_signals()
@@ -652,18 +668,9 @@ class LogViewerPanel(QWidget):
 
         # Increment the request ID so any result from a previous load is discarded
         self._load_request_id += 1
-        request_id = self._load_request_id
-
-        thread = QThread(self)
-        worker = _FileLoaderWorker(request_id, path)
-        worker.moveToThread(thread)
-        thread.started.connect(worker.run)
-        worker.finished.connect(self._on_file_loaded)
-        worker.error.connect(self._on_file_load_error)
-        worker.finished.connect(lambda *_: thread.quit())
-        worker.error.connect(lambda *_: thread.quit())
-        thread.finished.connect(thread.deleteLater)
-        thread.start()
+        # Emit the load request; the queued connection delivers it to the
+        # worker thread so no GC or thread-lifetime issues can occur.
+        self._load_requested.emit(self._load_request_id, path)
 
     @Slot(int, str, bool, list, list)
     def _on_file_loaded(
@@ -807,13 +814,20 @@ class LogViewerPanel(QWidget):
             self._text_view.find(needle, flags)
 
     # ------------------------------------------------------------------
-    # Empty state
+    # Empty state / lifecycle
     # ------------------------------------------------------------------
 
     def _show_empty_state(self) -> None:
         self._main_widget.setVisible(False)
         self._empty_label.setVisible(True)
         self._empty_label.setText("Select a run to view log files")
+
+    def closeEvent(self, event) -> None:  # noqa: N802
+        """Stop the background loader thread on close."""
+        self._auto_reload_timer.stop()
+        self._loader_thread.quit()
+        self._loader_thread.wait(2000)
+        super().closeEvent(event)
 
 
 # ---------------------------------------------------------------------------
