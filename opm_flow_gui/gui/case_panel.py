@@ -157,7 +157,7 @@ class _CaseItemWidget(QWidget):
         # ---- right column: name + path ----
         right = QVBoxLayout()
         right.setContentsMargins(0, 0, 0, 0)
-        right.setSpacing(4)
+        right.setSpacing(6)
 
         name_label = QLabel(case.name)
         name_label.setStyleSheet(
@@ -176,7 +176,7 @@ class _CaseItemWidget(QWidget):
 
         # ---- assemble ----
         row = QHBoxLayout(self)
-        row.setContentsMargins(8, 8, 8, 8)
+        row.setContentsMargins(8, 10, 8, 10)
         row.setSpacing(8)
         if self._badge is not None:
             row.addWidget(
@@ -265,15 +265,35 @@ class CasePanel(QWidget):
         content_layout.addWidget(header_widget)
 
         # --- search / filter ---
+        filter_row = QWidget()
+        filter_row.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+        filter_layout = QHBoxLayout(filter_row)
+        filter_layout.setContentsMargins(8, 4, 8, 0)
+        filter_layout.setSpacing(4)
+
         self._filter_edit = QLineEdit()
         self._filter_edit.setPlaceholderText("Filter cases\u2026")
         self._filter_edit.setClearButtonEnabled(True)
         self._filter_edit.setStyleSheet(
-            f"QLineEdit {{ margin: 6px 8px; padding: 6px 10px;"
+            f"QLineEdit {{ padding: 6px 10px;"
             f" border: 1px solid {_styles.BORDER}; border-radius: 6px;"
             f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_PRIMARY}; }}"
         )
-        content_layout.addWidget(self._filter_edit)
+        filter_layout.addWidget(self._filter_edit, 1)
+
+        self._filter_mode_btn = QPushButton("Name")
+        self._filter_mode_btn.setCheckable(True)
+        self._filter_mode_btn.setChecked(False)
+        self._filter_mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._filter_mode_btn.setToolTip(
+            "Toggle filter target: Name = match against case name only, "
+            "Path = match against the full file path"
+        )
+        self._filter_mode_btn.setStyleSheet(self._filter_mode_stylesheet())
+        filter_layout.addWidget(self._filter_mode_btn)
+
+        content_layout.addWidget(filter_row)
+        self._filter_row = filter_row
 
         # --- toolbar row ---
         self._toolbar = QWidget()
@@ -334,6 +354,19 @@ class CasePanel(QWidget):
         )
         return btn
 
+    @staticmethod
+    def _filter_mode_stylesheet() -> str:
+        """Return the QSS stylesheet for the filter-mode toggle button."""
+        return (
+            f"QPushButton {{ padding: 4px 8px; border-radius: 4px;"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_SECONDARY};"
+            f" border: 1px solid {_styles.BORDER}; font-size: 11px; }}"
+            f" QPushButton:checked {{ background-color: {_styles.ACCENT};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
+            f" QPushButton:hover:!checked {{ background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
+        )
+
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         """Switch between the collapsed bar and full content based on width."""
         super().resizeEvent(event)
@@ -353,11 +386,13 @@ class CasePanel(QWidget):
             f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
             f" background-color: {_styles.BG_SECONDARY};"
         )
+        self._filter_row.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
         self._filter_edit.setStyleSheet(
-            f"QLineEdit {{ margin: 6px 8px; padding: 6px 10px;"
+            f"QLineEdit {{ padding: 6px 10px;"
             f" border: 1px solid {_styles.BORDER}; border-radius: 6px;"
             f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_PRIMARY}; }}"
         )
+        self._filter_mode_btn.setStyleSheet(self._filter_mode_stylesheet())
         self._toolbar.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
         for btn in (self._btn_add, self._btn_scan, self._btn_remove):
             btn.setStyleSheet(
@@ -388,6 +423,7 @@ class CasePanel(QWidget):
         self._list.currentItemChanged.connect(self._on_selection_changed)
         self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._filter_edit.textChanged.connect(self._filter_cases)
+        self._filter_mode_btn.toggled.connect(self._on_filter_mode_toggled)
 
     # ------------------------------------------------------------------
     # Public helpers
@@ -471,13 +507,19 @@ class CasePanel(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(directory))
 
     def _filter_cases(self, text: str) -> None:
-        """Show only items whose case name contains *text* (case-insensitive)."""
+        """Show only items matching *text* against case name or full path."""
         needle = text.lower()
+        search_in_path = self._filter_mode_btn.isChecked()
         for idx in range(self._list.count()):
             item = self._list.item(idx)
             data_path: str = item.data(Qt.ItemDataRole.UserRole)
-            case_name = Path(data_path).stem.lower()
-            item.setHidden(needle not in case_name)
+            haystack = data_path.lower() if search_in_path else Path(data_path).stem.lower()
+            item.setHidden(needle not in haystack)
+
+    def _on_filter_mode_toggled(self, checked: bool) -> None:
+        """Update button label and re-apply filter when the mode is toggled."""
+        self._filter_mode_btn.setText("Path" if checked else "Name")
+        self._filter_cases(self._filter_edit.text())
 
     # ------------------------------------------------------------------
     # Widget factory
