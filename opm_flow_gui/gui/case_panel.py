@@ -107,10 +107,6 @@ class _CollapsedBar(QWidget):
             f" QPushButton:hover {{ background-color: {_styles.ACCENT}; color: #ffffff; }}"
         )
 
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        super().mousePressEvent(event)
-        self.clicked.emit()
-
 
 class _ElidingLabel(QLabel):
     """QLabel that automatically elides its text when resized."""
