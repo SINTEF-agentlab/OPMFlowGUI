@@ -497,8 +497,9 @@ class SummaryPanel(QWidget):
         thread.started.connect(worker.run)
         worker.single_loaded.connect(self._on_single_loaded)
         worker.multi_loaded.connect(self._on_multi_loaded)
-        worker.single_loaded.connect(lambda *_: thread.quit())
-        worker.multi_loaded.connect(lambda *_: thread.quit())
+        # Both signals lead to thread exit; connect directly (Qt drops extra args)
+        worker.single_loaded.connect(thread.quit)
+        worker.multi_loaded.connect(thread.quit)
         thread.finished.connect(thread.deleteLater)
         thread.start()
 

@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QObject, QThread, Signal, Slot, QTimer
 from PySide6.QtGui import (
+    QCloseEvent,
     QColor,
     QSyntaxHighlighter,
     QTextCharFormat,
@@ -690,7 +691,7 @@ class LogViewerPanel(QWidget):
         self._warnings = warnings
 
         prefix = (
-            f"— File truncated: showing last {_MAX_DISPLAY_CHARS // (1024 * 1024)} MB."
+            f"— File truncated: showing last {_MAX_DISPLAY_CHARS // (1024 * 1024)} M characters."
             " Use an external viewer for the full log. —\n\n"
             if truncated
             else ""
@@ -822,7 +823,7 @@ class LogViewerPanel(QWidget):
         self._empty_label.setVisible(True)
         self._empty_label.setText("Select a run to view log files")
 
-    def closeEvent(self, event) -> None:  # noqa: N802
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """Stop the background loader thread on close."""
         self._auto_reload_timer.stop()
         self._loader_thread.quit()
