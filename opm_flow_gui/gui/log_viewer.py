@@ -42,9 +42,12 @@ import opm_flow_gui.gui.styles as _styles
 
 logger = logging.getLogger(__name__)
 
-# Maximum number of characters to load into the text view.  Files larger than
-# this limit are truncated to the *tail* so the most recent output is visible.
-_MAX_DISPLAY_CHARS = 2 * 1024 * 1024  # 2 MB
+# Maximum number of characters to load into the text view.  After
+# ``read_text()`` decodes the file the string length is approximately equal
+# to the file size in bytes (for ASCII/UTF-8 log content), so this limit
+# also acts as a ~2 MB file-size cap.  Files exceeding this limit are
+# tail-truncated so the most recent output remains visible.
+_MAX_DISPLAY_CHARS = 2 * 1024 * 1024  # ≈2 MB for typical ASCII log content
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +92,15 @@ class WarningEntry:
     kind: str
     message: str
     line_number: int     # 1-based
+
+
+@dataclass
+class _ScrollState:
+    """Captures the vertical scroll position before an async file load."""
+
+    preserve: bool = False
+    position: int | None = None
+    at_bottom: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -262,7 +274,7 @@ class LogViewerPanel(QWidget):
         self._warnings: list[WarningEntry] = []
         self._content: str = ""
         self._load_request_id: int = 0   # incremented per load to discard stale results
-        self._pending_scroll: tuple = (False, None, False)
+        self._pending_scroll: _ScrollState = _ScrollState()
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
@@ -630,13 +642,13 @@ class LogViewerPanel(QWidget):
         # Capture scroll position before the async load
         scrollbar = self._text_view.verticalScrollBar()
         if preserve_position:
-            saved_pos: int | None = scrollbar.value()
-            at_bottom = saved_pos >= scrollbar.maximum()
+            self._pending_scroll = _ScrollState(
+                preserve=True,
+                position=scrollbar.value(),
+                at_bottom=scrollbar.value() >= scrollbar.maximum(),
+            )
         else:
-            saved_pos = None
-            at_bottom = False
-
-        self._pending_scroll = (preserve_position, saved_pos, at_bottom)
+            self._pending_scroll = _ScrollState()
 
         # Increment the request ID so any result from a previous load is discarded
         self._load_request_id += 1
@@ -682,13 +694,13 @@ class LogViewerPanel(QWidget):
         self._apply_search()
 
         # Restore scroll position
-        preserve_position, saved_pos, at_bottom = self._pending_scroll
-        if preserve_position:
+        scroll = self._pending_scroll
+        if scroll.preserve:
             scrollbar = self._text_view.verticalScrollBar()
-            if at_bottom:
+            if scroll.at_bottom:
                 scrollbar.setValue(scrollbar.maximum())
-            elif saved_pos is not None:
-                scrollbar.setValue(min(saved_pos, scrollbar.maximum()))
+            elif scroll.position is not None:
+                scrollbar.setValue(min(scroll.position, scrollbar.maximum()))
 
     @Slot(int, str)
     def _on_file_load_error(self, request_id: int, error_msg: str) -> None:

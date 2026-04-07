@@ -466,7 +466,7 @@ class SummaryPanel(QWidget):
             candidates = self._find_summary_candidates(run.output_dir)
             paths.append(str(candidates[0]) if candidates else "")
 
-        if any(paths):
+        if any(p for p in paths if p):
             self._header.setText("Results  (loading…)")
             request_id = self._load_request_id
             self._start_loader(paths, request_id, runs=self._multi_runs)
