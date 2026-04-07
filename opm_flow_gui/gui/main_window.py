@@ -7,6 +7,8 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+import psutil
+
 from PySide6.QtCore import Qt, QObject, QThread, Signal, Slot
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
@@ -81,6 +83,11 @@ class MainWindow(QMainWindow):
             except Exception:
                 logger.warning("Failed to load saved cases – starting fresh.")
 
+        # Any run that was saved as RUNNING but whose process is no longer alive
+        # (e.g. the GUI crashed or was closed mid-simulation) must be marked as
+        # INCOMPLETE so the UI reflects their true state.
+        self._mark_stale_running_as_incomplete()
+
         config = self._config_manager.config
         self._sim_runner = SimulationRunner(
             flow_binary=config.flow_binary,
@@ -88,6 +95,10 @@ class MainWindow(QMainWindow):
             use_wsl=config.use_wsl,
             parent=self,
         )
+
+        # Keep track of background prefetch threads so they can be cleanly
+        # stopped before the window is destroyed.
+        self._bg_threads: list[QThread] = []
 
         # Pre-fetch OPM Flow --help output so the first "New Run" dialog
         # opens instantly (result is cached for subsequent calls).
@@ -510,14 +521,38 @@ class MainWindow(QMainWindow):
     # Persistence                                                             #
     # --------------------------------------------------------------------- #
 
+    def _mark_stale_running_as_incomplete(self) -> None:
+        """Mark RUNNING runs whose process is no longer alive as INCOMPLETE.
+
+        When the GUI is closed or crashes while a simulation is running, the
+        run status is saved as RUNNING.  On the next launch those runs have no
+        associated process, so they are reclassified as INCOMPLETE.
+        """
+        for case in self._case_manager.get_all_cases():
+            for run in case.runs:
+                if run.status != RunStatus.RUNNING:
+                    continue
+                pid = run.pid
+                alive = False
+                if pid is not None:
+                    try:
+                        alive = psutil.pid_exists(int(pid))
+                    except Exception:
+                        pass
+                if not alive:
+                    run.status = RunStatus.INCOMPLETE
+
     def _prefetch_options(self, flow_binary: str, use_wsl: bool) -> None:
         """Warm the flow-options cache in a background thread."""
         thread = QThread(self)
         worker = _OptionsPrefetcher(flow_binary, use_wsl)
         worker.moveToThread(thread)
         thread.started.connect(worker.run)
+        worker.finished.connect(worker.deleteLater)
         worker.finished.connect(thread.quit)
         thread.finished.connect(thread.deleteLater)
+        thread.finished.connect(lambda t=thread: self._bg_threads.remove(t) if t in self._bg_threads else None)
+        self._bg_threads.append(thread)
         thread.start()
 
     def _save_state(self) -> None:
@@ -529,6 +564,12 @@ class MainWindow(QMainWindow):
             logger.exception("Failed to save application state")
 
     def closeEvent(self, event) -> None:  # noqa: N802
+        # Stop background threads gracefully before the window is destroyed.
+        for thread in list(self._bg_threads):
+            if thread.isRunning():
+                thread.quit()
+                thread.wait(3000)
+        self._summary_panel.shutdown()
         self._save_state()
         super().closeEvent(event)
 

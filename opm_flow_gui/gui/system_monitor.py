@@ -12,7 +12,7 @@ import logging
 
 import psutil
 
-from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QMetaObject, QObject, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -447,19 +447,31 @@ class SystemMonitorPanel(QWidget):
         if not self._timer.isActive():
             self._timer.start()
         if not self._started_once:
-            # Trigger an immediate first collection so the panel is populated right away.
+            # Trigger an immediate first collection via a queued cross-thread
+            # invocation so it always runs in the worker thread, preventing a
+            # GUI freeze from slow psutil calls (e.g. process enumeration).
             self._started_once = True
-            QTimer.singleShot(0, self._worker.collect)
+            QMetaObject.invokeMethod(
+                self._worker, "collect", Qt.ConnectionType.QueuedConnection
+            )
 
     def stop(self) -> None:
         """Stop the refresh timer (called when the tab is hidden)."""
         self._timer.stop()
 
-    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
-        """Stop the timer and worker thread on close."""
+    def shutdown(self) -> None:
+        """Stop the timer and cleanly shut down the background worker thread.
+
+        Must be called before the widget (or its parent window) is destroyed to
+        prevent the "QThread: Destroyed while thread is still running" warning.
+        """
         self._timer.stop()
         self._worker_thread.quit()
         self._worker_thread.wait(2000)
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        """Stop the timer and worker thread on close."""
+        self.shutdown()
         super().closeEvent(event)
 
     def refresh_styles(self) -> None:

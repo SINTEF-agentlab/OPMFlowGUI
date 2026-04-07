@@ -389,6 +389,13 @@ class SummaryPanel(QWidget):
     # Public API
     # ------------------------------------------------------------------
 
+    def shutdown(self) -> None:
+        """Cleanly shut down background resources (worker threads).
+
+        Must be called before the parent window is destroyed.
+        """
+        self._system_monitor.shutdown()
+
     def set_run(self, run: SimulationRun | None) -> None:
         """Load summary data for *run*, or clear the panel when ``None``."""
         # Invalidate any in-progress background load
