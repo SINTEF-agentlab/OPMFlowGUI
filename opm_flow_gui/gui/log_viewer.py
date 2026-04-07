@@ -12,8 +12,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QObject, QThread, Signal, Slot, QTimer
 from PySide6.QtGui import (
+    QCloseEvent,
     QColor,
     QSyntaxHighlighter,
     QTextCharFormat,
@@ -41,6 +42,14 @@ if TYPE_CHECKING:
 import opm_flow_gui.gui.styles as _styles
 
 logger = logging.getLogger(__name__)
+
+# Maximum number of characters to load into the text view.  After
+# ``read_text()`` decodes the file the string length is approximately equal
+# to the file size in bytes (for ASCII/UTF-8 log content), so this limit
+# also acts as a ~2 MB file-size cap.  Files exceeding this limit are
+# tail-truncated so the most recent output remains visible.
+_MAX_DISPLAY_CHARS = 2 * 1024 * 1024  # ≈2 MB for typical ASCII log content
+
 
 # ---------------------------------------------------------------------------
 # Regex patterns for parsing OPM Flow PRT/DBG files
@@ -84,6 +93,15 @@ class WarningEntry:
     kind: str
     message: str
     line_number: int     # 1-based
+
+
+@dataclass
+class _ScrollState:
+    """Captures the vertical scroll position before an async file load."""
+
+    preserve: bool = False
+    position: int | None = None
+    at_bottom: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +215,49 @@ def _parse_log(content: str) -> tuple[list[StepInfo], list[WarningEntry]]:
 
 
 # ---------------------------------------------------------------------------
+# Background worker – reads and parses a log file off the GUI thread
+# ---------------------------------------------------------------------------
+
+class _FileLoaderWorker(QObject):
+    """Reads and parses log files in a persistent background thread.
+
+    Requests are submitted via the ``load(request_id, path)`` slot, which is
+    invoked through a queued connection from the GUI thread so it always runs
+    on the worker's dedicated thread.  For files larger than
+    *_MAX_DISPLAY_CHARS*, only the tail is displayed to avoid a long
+    ``setPlainText()`` freeze.
+    """
+
+    # Emits (request_id, display_content, truncated, steps, warnings)
+    finished: Signal = Signal(int, str, bool, list, list)
+    # Emits (request_id, error_message)
+    error: Signal = Signal(int, str)
+
+    @Slot(int, str)
+    def load(self, request_id: int, path: str) -> None:
+        """Read *path*, parse it, and emit *finished* or *error*."""
+        try:
+            content = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            self.error.emit(request_id, str(exc))
+            return
+
+        truncated = False
+        display_content = content
+        if len(content) > _MAX_DISPLAY_CHARS:
+            truncated = True
+            # Keep the tail so the most recent log output is visible
+            display_content = content[-_MAX_DISPLAY_CHARS:]
+            # Align to the start of a line to avoid partial lines at the top
+            newline_pos = display_content.find("\n")
+            if newline_pos != -1:
+                display_content = display_content[newline_pos + 1:]
+
+        steps, warnings = _parse_log(content)
+        self.finished.emit(request_id, display_content, truncated, steps, warnings)
+
+
+# ---------------------------------------------------------------------------
 # Log viewer panel
 # ---------------------------------------------------------------------------
 
@@ -206,12 +267,19 @@ class LogViewerPanel(QWidget):
     # Auto-reload interval when a simulation is running (milliseconds)
     _AUTO_RELOAD_INTERVAL_MS = 5000
 
+    # Internal signal used to send a load request to the background worker.
+    # Using a signal (rather than QMetaObject.invokeMethod) guarantees a
+    # proper queued cross-thread connection and keeps Python references alive.
+    _load_requested: Signal = Signal(int, str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._current_run: SimulationRun | None = None
         self._steps: list[StepInfo] = []
         self._warnings: list[WarningEntry] = []
         self._content: str = ""
+        self._load_request_id: int = 0   # incremented per load to discard stale results
+        self._pending_scroll: _ScrollState = _ScrollState()
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
@@ -220,6 +288,18 @@ class LogViewerPanel(QWidget):
         self._auto_reload_timer = QTimer(self)
         self._auto_reload_timer.setInterval(self._AUTO_RELOAD_INTERVAL_MS)
         self._auto_reload_timer.timeout.connect(self._auto_reload)
+
+        # Persistent background thread for file I/O – avoids the GC and
+        # thread-lifetime issues that arise when creating a new QThread per
+        # request.  The worker lives on _loader_thread for its whole lifetime.
+        self._loader_thread = QThread(self)
+        self._loader_worker = _FileLoaderWorker()
+        self._loader_worker.moveToThread(self._loader_thread)
+        # Queued connection: _load_requested fires on GUI thread, load() runs on worker thread
+        self._load_requested.connect(self._loader_worker.load)
+        self._loader_worker.finished.connect(self._on_file_loaded)
+        self._loader_worker.error.connect(self._on_file_load_error)
+        self._loader_thread.start()
 
         self._setup_ui()
         self._connect_signals()
@@ -576,37 +656,68 @@ class LogViewerPanel(QWidget):
             self._load_file(path, preserve_position=True)
 
     def _load_file(self, path: str, preserve_position: bool = False) -> None:
-        # Capture scroll position before loading if requested
+        # Capture scroll position before the async load
         scrollbar = self._text_view.verticalScrollBar()
         if preserve_position:
-            saved_pos: int | None = scrollbar.value()
-            at_bottom = saved_pos >= scrollbar.maximum()
+            self._pending_scroll = _ScrollState(
+                preserve=True,
+                position=scrollbar.value(),
+                at_bottom=scrollbar.value() >= scrollbar.maximum(),
+            )
         else:
-            saved_pos = None
-            at_bottom = False
+            self._pending_scroll = _ScrollState()
 
-        try:
-            content = Path(path).read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            logger.warning("Could not read log file %s: %s", path, exc)
-            self._text_view.setPlainText(f"Error reading file:\n{exc}")
-            return
+        # Increment the request ID so any result from a previous load is discarded
+        self._load_request_id += 1
+        # Emit the load request; the queued connection delivers it to the
+        # worker thread so no GC or thread-lifetime issues can occur.
+        self._load_requested.emit(self._load_request_id, path)
 
-        self._content = content
-        self._text_view.setPlainText(content)
+    @Slot(int, str, bool, list, list)
+    def _on_file_loaded(
+        self,
+        request_id: int,
+        display_content: str,
+        truncated: bool,
+        steps: list,
+        warnings: list,
+    ) -> None:
+        """Called on the GUI thread when file reading and parsing finishes."""
+        if request_id != self._load_request_id:
+            return  # superseded by a newer request
 
-        self._steps, self._warnings = _parse_log(content)
+        self._content = display_content
+        self._steps = steps
+        self._warnings = warnings
+
+        prefix = (
+            f"— File truncated: showing last {_MAX_DISPLAY_CHARS // (1024 * 1024)} M characters."
+            " Use an external viewer for the full log. —\n\n"
+            if truncated
+            else ""
+        )
+        self._text_view.setPlainText(prefix + display_content)
+
         self._populate_steps()
         self._populate_warnings()
         self._apply_search()
 
         # Restore scroll position
-        if preserve_position:
-            if at_bottom:
-                # If we were at the bottom, follow new content
+        scroll = self._pending_scroll
+        if scroll.preserve:
+            scrollbar = self._text_view.verticalScrollBar()
+            if scroll.at_bottom:
                 scrollbar.setValue(scrollbar.maximum())
-            elif saved_pos is not None:
-                scrollbar.setValue(min(saved_pos, scrollbar.maximum()))
+            elif scroll.position is not None:
+                scrollbar.setValue(min(scroll.position, scrollbar.maximum()))
+
+    @Slot(int, str)
+    def _on_file_load_error(self, request_id: int, error_msg: str) -> None:
+        """Called on the GUI thread when file reading fails."""
+        if request_id != self._load_request_id:
+            return
+        logger.warning("Could not read log file: %s", error_msg)
+        self._text_view.setPlainText(f"Error reading file:\n{error_msg}")
 
     # ------------------------------------------------------------------
     # Step navigation
@@ -704,13 +815,20 @@ class LogViewerPanel(QWidget):
             self._text_view.find(needle, flags)
 
     # ------------------------------------------------------------------
-    # Empty state
+    # Empty state / lifecycle
     # ------------------------------------------------------------------
 
     def _show_empty_state(self) -> None:
         self._main_widget.setVisible(False)
         self._empty_label.setVisible(True)
         self._empty_label.setText("Select a run to view log files")
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
+        """Stop the background loader thread on close."""
+        self._auto_reload_timer.stop()
+        self._loader_thread.quit()
+        self._loader_thread.wait(2000)
+        super().closeEvent(event)
 
 
 # ---------------------------------------------------------------------------

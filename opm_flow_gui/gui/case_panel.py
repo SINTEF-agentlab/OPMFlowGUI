@@ -30,10 +30,10 @@ from opm_flow_gui.core.case_manager import Case, CaseManager
 import opm_flow_gui.gui.styles as _styles
 
 # ---------------------------------------------------------------------------
-# Placeholder logo loaded from the assets directory.
+# OPM logo loaded from the assets directory.
 # ---------------------------------------------------------------------------
 _ASSETS_DIR = Path(__file__).parent.parent / "assets"
-_LOGO_PATH = _ASSETS_DIR / "logo_placeholder.png"
+_LOGO_PATH = _ASSETS_DIR / "opm_logo_compact.png"
 
 
 def _logo_pixmap(height: int = 24) -> QPixmap:
@@ -236,16 +236,15 @@ class CasePanel(QWidget):
         header_layout.setSpacing(8)
 
         self._logo_label = QLabel()
-        pixmap = _logo_pixmap(24)
+        pixmap = _logo_pixmap(50)
         if not pixmap.isNull():
             self._logo_label.setPixmap(pixmap)
-        # Fixed display size; the actual asset (300×80 px) is scaled to fit this widget
-        self._logo_label.setFixedSize(72, 24)
+        # self._logo_label.setFixedSize(72, 24)
         self._logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._logo_label.setStyleSheet("background: transparent;")
         header_layout.addWidget(self._logo_label)
 
-        self._header = _ClickableHeader("Cases ▶")
+        self._header = _ClickableHeader("")
         self._header.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
             f" background-color: {_styles.BG_SECONDARY};"

@@ -13,7 +13,7 @@ import logging
 import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, QThread, Signal, Slot
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -56,6 +56,44 @@ from opm_flow_gui.gui.styles import (
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Background worker – loads a SummaryReader off the GUI thread so the panel
+# stays responsive while large UNSMRY files are being parsed.
+# ---------------------------------------------------------------------------
+
+class _SummaryLoaderWorker(QObject):
+    """Loads one or more :class:`SummaryReader` objects in a background thread."""
+
+    # Single-run mode: emits (request_id, reader | None)
+    single_loaded: Signal = Signal(int, object)
+    # Multi-run mode: emits (request_id, list[reader | None], list[SimulationRun])
+    multi_loaded: Signal = Signal(int, list, list)
+
+    def __init__(
+        self,
+        request_id: int,
+        paths: list[str],
+        runs: list[SimulationRun] | None = None,
+    ) -> None:
+        super().__init__()
+        self._request_id = request_id
+        self._paths = paths
+        self._runs = runs  # non-None → multi-run mode
+
+    @Slot()
+    def run(self) -> None:
+        readers: list[SummaryReader | None] = []
+        for path in self._paths:
+            reader = SummaryReader(path)
+            readers.append(reader if reader.load() else None)
+
+        if self._runs is None:
+            # Single-run mode
+            self.single_loaded.emit(self._request_id, readers[0] if readers else None)
+        else:
+            self.multi_loaded.emit(self._request_id, readers, self._runs)
+
 def _hex_to_rgb(color: str) -> tuple[int, int, int]:
     color = color.lstrip("#")
     return int(color[0:2], 16), int(color[2:4], 16), int(color[4:6], 16)
@@ -92,6 +130,7 @@ class SummaryPanel(QWidget):
         self._color_index: int = 0
         self._plot_colors: list[str] = self._build_plot_palette()
         self._last_selected_key: str | None = None   # persists across run switches
+        self._load_request_id: int = 0  # incremented each time a new load is requested
 
         self._setup_ui()
         self._connect_signals()
@@ -363,6 +402,9 @@ class SummaryPanel(QWidget):
 
     def set_run(self, run: SimulationRun | None) -> None:
         """Load summary data for *run*, or clear the panel when ``None``."""
+        # Invalidate any in-progress background load
+        self._load_request_id += 1
+
         # Exit multi-run mode when switching to single run
         self._multi_runs = []
         self._multi_readers = []
@@ -383,9 +425,13 @@ class SummaryPanel(QWidget):
 
         self._log_viewer.set_run(run)
 
-        if self._load_summary(run.output_dir):
-            self._populate_tree()
-            self._restore_key_selection()
+        candidates = self._find_summary_candidates(run.output_dir)
+        if not candidates:
+            return
+
+        self._header.setText("Results  (loading…)")
+        request_id = self._load_request_id
+        self._start_loader([str(candidates[0])], request_id, runs=None)
 
     def set_multi_run(self, runs: list[SimulationRun]) -> None:
         """Overlay summary data from multiple *runs* on the same plot.
@@ -396,6 +442,9 @@ class SummaryPanel(QWidget):
         if len(runs) <= 1:
             self.set_run(runs[0] if runs else None)
             return
+
+        # Invalidate any in-progress background load
+        self._load_request_id += 1
 
         self._multi_runs = list(runs)
         self._current_run = None
@@ -412,46 +461,76 @@ class SummaryPanel(QWidget):
         if self._tabs.currentIndex() == log_idx:
             self._tabs.setCurrentIndex(0)
 
-        # Load a reader for each run; populate tree from the first successful one
-        self._multi_readers = []
-        first_reader: SummaryReader | None = None
+        paths: list[str] = []
         for run in self._multi_runs:
-            out = Path(run.output_dir)
-            candidates = list(out.glob("*.SMSPEC")) + list(out.glob("*.DATA"))
-            if not candidates:
-                self._multi_readers.append(None)
-                continue
-            r = SummaryReader(str(candidates[0]))
-            if r.load():
-                self._multi_readers.append(r)
-                if first_reader is None:
-                    first_reader = r
-            else:
-                self._multi_readers.append(None)
+            candidates = self._find_summary_candidates(run.output_dir)
+            paths.append(str(candidates[0]) if candidates else "")
 
-        if first_reader is not None:
-            self._reader = first_reader
-            self._populate_tree()
-            self._restore_key_selection()
+        if any(p for p in paths if p):
+            self._header.setText("Results  (loading…)")
+            request_id = self._load_request_id
+            self._start_loader(paths, request_id, runs=self._multi_runs)
 
     # ------------------------------------------------------------------
     # Data loading
     # ------------------------------------------------------------------
 
-    def _load_summary(self, output_dir: str) -> bool:
-        """Create a :class:`SummaryReader` and attempt to load data."""
+    @staticmethod
+    def _find_summary_candidates(output_dir: str) -> list[Path]:
+        """Return candidate SMSPEC/DATA files in *output_dir*."""
         out = Path(output_dir)
         candidates = list(out.glob("*.SMSPEC")) + list(out.glob("*.DATA"))
         if not candidates:
             logger.warning("No SMSPEC/DATA files found in %s", output_dir)
-            return False
+        return candidates
 
-        reader = SummaryReader(str(candidates[0]))
-        if not reader.load():
-            return False
+    def _start_loader(
+        self,
+        paths: list[str],
+        request_id: int,
+        runs: list[SimulationRun] | None,
+    ) -> None:
+        """Spin up a background thread to load *paths* as :class:`SummaryReader` objects."""
+        thread = QThread(self)
+        worker = _SummaryLoaderWorker(request_id, paths, runs)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.single_loaded.connect(self._on_single_loaded)
+        worker.multi_loaded.connect(self._on_multi_loaded)
+        # Both signals lead to thread exit; connect directly (Qt drops extra args)
+        worker.single_loaded.connect(thread.quit)
+        worker.multi_loaded.connect(thread.quit)
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
 
-        self._reader = reader
-        return True
+    @Slot(int, object)
+    def _on_single_loaded(self, request_id: int, reader: object) -> None:
+        """Called on the GUI thread when a single-run summary finishes loading."""
+        if request_id != self._load_request_id:
+            return  # superseded by a newer request
+        self._header.setText("Results")
+        if reader is not None:
+            self._reader = reader  # type: ignore[assignment]
+            self._populate_tree()
+            self._restore_key_selection()
+
+    @Slot(int, list, list)
+    def _on_multi_loaded(
+        self,
+        request_id: int,
+        readers: list,
+        runs: list,
+    ) -> None:
+        """Called on the GUI thread when multi-run summary loading finishes."""
+        if request_id != self._load_request_id:
+            return  # superseded by a newer request
+        self._header.setText("Results")
+        self._multi_readers = readers
+        first_reader = next((r for r in readers if r is not None), None)
+        if first_reader is not None:
+            self._reader = first_reader
+            self._populate_tree()
+            self._restore_key_selection()
 
     # ------------------------------------------------------------------
     # Tree population

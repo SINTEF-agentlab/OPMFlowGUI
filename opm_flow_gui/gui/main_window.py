@@ -7,7 +7,7 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QObject, QThread, Signal, Slot
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
@@ -34,6 +34,30 @@ from opm_flow_gui.gui.summary_panel import SummaryPanel
 logger = logging.getLogger(__name__)
 
 _CASES_FILE = DEFAULT_CONFIG_DIR / "cases.json"
+
+
+# ---------------------------------------------------------------------------
+# Background worker – warms the flow-options cache so the Run dialog opens
+# instantly when the user first clicks "New Run".
+# ---------------------------------------------------------------------------
+
+class _OptionsPrefetcher(QObject):
+    """Fetches OPM Flow ``--help`` output in a background thread."""
+
+    finished: Signal = Signal()
+
+    def __init__(self, flow_binary: str, use_wsl: bool) -> None:
+        super().__init__()
+        self._flow_binary = flow_binary
+        self._use_wsl = use_wsl
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            get_flow_options(self._flow_binary, self._use_wsl)
+        except Exception:  # noqa: BLE001
+            pass
+        self.finished.emit()
 
 
 class MainWindow(QMainWindow):
@@ -64,6 +88,10 @@ class MainWindow(QMainWindow):
             use_wsl=config.use_wsl,
             parent=self,
         )
+
+        # Pre-fetch OPM Flow --help output so the first "New Run" dialog
+        # opens instantly (result is cached for subsequent calls).
+        self._prefetch_options(config.flow_binary, config.use_wsl)
 
         # Discover cases from configured search directories
         for search_dir in config.search_directories:
@@ -419,6 +447,8 @@ class MainWindow(QMainWindow):
             ]
             for k in stale_keys:
                 _flow_options_cache.pop(k, None)
+            # Re-warm the cache for the new binary in the background.
+            self._prefetch_options(new_config.flow_binary, new_config.use_wsl)
 
         # Update ResInsight binary in summary panel
         self._summary_panel.set_resinsight_binary(new_config.resinsight_binary)
@@ -479,6 +509,16 @@ class MainWindow(QMainWindow):
     # --------------------------------------------------------------------- #
     # Persistence                                                             #
     # --------------------------------------------------------------------- #
+
+    def _prefetch_options(self, flow_binary: str, use_wsl: bool) -> None:
+        """Warm the flow-options cache in a background thread."""
+        thread = QThread(self)
+        worker = _OptionsPrefetcher(flow_binary, use_wsl)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(thread.quit)
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
 
     def _save_state(self) -> None:
         try:

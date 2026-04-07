@@ -32,7 +32,7 @@ import opm_flow_gui.gui.styles as _styles
 
 logger = logging.getLogger(__name__)
 
-_REFRESH_INTERVAL_MS = 2000
+_REFRESH_INTERVAL_MS = 5000
 
 
 def _pct_color(pct: float) -> str:
@@ -169,6 +169,7 @@ class _CpuCoreBar(QWidget):
 
     def __init__(self, core_index: int, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._last_color: str = ""
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 1, 0, 1)
         layout.setSpacing(6)
@@ -206,11 +207,13 @@ class _CpuCoreBar(QWidget):
         self._bar.setValue(ipct)
         self._pct_label.setText(f"{ipct}%")
         color = _pct_color(pct)
-        self._bar.setStyleSheet(
-            f"QProgressBar {{ background-color: {_styles.BG_TERTIARY}; border: none;"
-            f" border-radius: 5px; }}"
-            f" QProgressBar::chunk {{ background-color: {color}; border-radius: 5px; }}"
-        )
+        if color != self._last_color:
+            self._last_color = color
+            self._bar.setStyleSheet(
+                f"QProgressBar {{ background-color: {_styles.BG_TERTIARY}; border: none;"
+                f" border-radius: 5px; }}"
+                f" QProgressBar::chunk {{ background-color: {color}; border-radius: 5px; }}"
+            )
 
     def refresh_styles(self) -> None:
         """Re-apply inline stylesheets using the current active theme colours."""
@@ -219,6 +222,7 @@ class _CpuCoreBar(QWidget):
         )
         pct = self._bar.value()
         color = _pct_color(pct)
+        self._last_color = color  # resync cache with the newly applied stylesheet
         self._bar.setStyleSheet(
             f"QProgressBar {{ background-color: {_styles.BG_TERTIARY}; border: none;"
             f" border-radius: 5px; }}"
@@ -235,6 +239,7 @@ class SystemMonitorPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._cpu_bars: list[_CpuCoreBar] = []
+        self._started_once: bool = False
         self._setup_ui()
 
         # Background thread for psutil data collection (avoids GUI freezes on Windows)
@@ -244,13 +249,12 @@ class SystemMonitorPanel(QWidget):
         self._worker.data_ready.connect(self._on_data_ready)
         self._worker_thread.start()
 
-        # Timer fires on the GUI thread and triggers the worker via a queued connection
+        # Timer fires on the GUI thread and triggers the worker via a queued connection.
+        # The timer is started lazily by start() so it does not consume resources
+        # while the System Monitor tab is not visible.
         self._timer = QTimer(self)
         self._timer.setInterval(_REFRESH_INTERVAL_MS)
         self._timer.timeout.connect(self._worker.collect)
-        self._timer.start()
-        # Initial populate (queued so the thread is ready)
-        QTimer.singleShot(0, self._worker.collect)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -442,6 +446,10 @@ class SystemMonitorPanel(QWidget):
         """Start the refresh timer (called when the tab becomes visible)."""
         if not self._timer.isActive():
             self._timer.start()
+        if not self._started_once:
+            # Trigger an immediate first collection so the panel is populated right away.
+            self._started_once = True
+            QTimer.singleShot(0, self._worker.collect)
 
     def stop(self) -> None:
         """Stop the refresh timer (called when the tab is hidden)."""
