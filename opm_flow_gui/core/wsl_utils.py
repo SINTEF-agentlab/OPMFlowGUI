@@ -54,7 +54,7 @@ def windows_path_to_wsl(path: str) -> str:
     >>> windows_path_to_wsl("/already/unix")
     '/already/unix'
     """
-    m = re.match(r"^([A-Za-z]):[/\\](.*)", path)
+    m = re.match(r"^([A-Za-z]):[/\\]?(.*)", path)
     if m:
         drive = m.group(1).lower()
         rest = m.group(2).replace("\\", "/")

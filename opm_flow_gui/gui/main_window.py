@@ -397,11 +397,13 @@ class MainWindow(QMainWindow):
         # Invalidate cached flow options when the binary path or WSL flag changes
         if new_config.flow_binary != old_flow_binary or new_config.use_wsl != old_use_wsl:
             from opm_flow_gui.core.simulation_runner import _flow_options_cache
-            keys_to_remove = [
+            # Remove stale entries: old binary (both WSL variants) and the
+            # old (same binary, old WSL flag) entry when only the flag changed.
+            stale_keys = [
                 k for k in _flow_options_cache
-                if k[0] == old_flow_binary or k[0] == new_config.flow_binary
+                if k[0] == old_flow_binary or (k[0] == new_config.flow_binary and k[1] == old_use_wsl)
             ]
-            for k in keys_to_remove:
+            for k in stale_keys:
                 _flow_options_cache.pop(k, None)
 
         # Update ResInsight binary in summary panel

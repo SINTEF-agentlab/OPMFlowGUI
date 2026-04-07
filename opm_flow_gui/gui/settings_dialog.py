@@ -277,7 +277,7 @@ class SettingsDialog(QDialog):
             if item is not None:
                 dirs.append(item.text())
 
-        use_wsl = self._chk_wsl.isChecked() if self._chk_wsl is not None else False
+        use_wsl = self._chk_wsl.isChecked() if self._chk_wsl is not None else self._config.use_wsl
 
         return Config(
             flow_binary=self._edit_flow.text().strip(),
