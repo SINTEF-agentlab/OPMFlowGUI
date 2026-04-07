@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
 )
 
 from opm_flow_gui.core.config import Config
+from opm_flow_gui.core.wsl_utils import is_windows
 from opm_flow_gui.gui.styles import (
     ACCENT,
     ACCENT_LIGHT,
@@ -165,6 +167,24 @@ class SettingsDialog(QDialog):
             self._browse_output_path,
         )
 
+        # WSL checkbox – only relevant on Windows
+        self._chk_wsl: QCheckBox | None = None
+        if is_windows():
+            self._chk_wsl = QCheckBox(
+                "Run OPM Flow via WSL (Windows Subsystem for Linux)"
+            )
+            self._chk_wsl.setChecked(self._config.use_wsl)
+            self._chk_wsl.setToolTip(
+                "When enabled, the flow executable is invoked through WSL.\n"
+                "Output and case paths are automatically translated to WSL\n"
+                "mount-point paths (/mnt/<drive>/…) before being passed to flow."
+            )
+            self._chk_wsl.setStyleSheet(
+                f"QCheckBox {{ color: {TEXT_SECONDARY}; font-weight: 600;"
+                " background: transparent; }"
+            )
+            layout.addWidget(self._chk_wsl)
+
         return group
 
     def _build_search_dirs_group(self) -> QGroupBox:
@@ -257,6 +277,8 @@ class SettingsDialog(QDialog):
             if item is not None:
                 dirs.append(item.text())
 
+        use_wsl = self._chk_wsl.isChecked() if self._chk_wsl is not None else self._config.use_wsl
+
         return Config(
             flow_binary=self._edit_flow.text().strip(),
             mpirun_binary=self._edit_mpirun.text().strip(),
@@ -265,6 +287,7 @@ class SettingsDialog(QDialog):
             search_directories=dirs,
             case_files=list(self._config.case_files),
             theme=self._theme_combo.currentText(),
+            use_wsl=use_wsl,
         )
 
     # ------------------------------------------------------------------

@@ -9,6 +9,8 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QObject, QProcess, Signal
 
+from opm_flow_gui.core.wsl_utils import windows_path_to_wsl
+
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
@@ -119,23 +121,31 @@ def _build_option(name: str, raw_type: str, description: str) -> dict | None:
     return opt
 
 
-# Cache parsed options per binary path so ``flow --help`` is only run once
-_flow_options_cache: dict[str, list[dict]] = {}
+# Cache parsed options per (binary path, use_wsl) so ``flow --help`` is only run once
+_flow_options_cache: dict[tuple[str, bool], list[dict]] = {}
 
 
-def get_flow_options(flow_binary: str) -> list[dict]:
+def get_flow_options(flow_binary: str, use_wsl: bool = False) -> list[dict]:
     """Return option descriptors for *flow_binary* by parsing ``--help``.
 
     The result is cached so the subprocess is only spawned once per binary
     path within a single process lifetime.  Returns an empty list if
     *flow_binary* cannot be executed.
+
+    When *use_wsl* is ``True`` the binary is invoked via ``wsl``.
     """
-    if flow_binary in _flow_options_cache:
-        return _flow_options_cache[flow_binary]
+    cache_key: tuple[str, bool] = (flow_binary, use_wsl)
+    if cache_key in _flow_options_cache:
+        return _flow_options_cache[cache_key]
+
+    if use_wsl:
+        cmd = ["wsl", flow_binary, "--help"]
+    else:
+        cmd = [flow_binary, "--help"]
 
     try:
         result = subprocess.run(
-            [flow_binary, "--help"],
+            cmd,
             capture_output=True,
             text=True,
             timeout=30,
@@ -150,7 +160,7 @@ def get_flow_options(flow_binary: str) -> list[dict]:
         )
         options = []
 
-    _flow_options_cache[flow_binary] = options
+    _flow_options_cache[cache_key] = options
     return options
 
 
@@ -162,6 +172,7 @@ def build_flow_command(
     run: SimulationRun,
     flow_binary: str = "flow",
     mpirun_binary: str = "mpirun",
+    use_wsl: bool = False,
 ) -> list[str]:
     """Build the full command list to launch an OPM Flow simulation.
 
@@ -173,25 +184,39 @@ def build_flow_command(
         Path or name of the ``flow`` executable.
     mpirun_binary:
         Path or name of the ``mpirun`` executable.
+    use_wsl:
+        When ``True`` the command is wrapped with ``wsl`` and Windows paths
+        are converted to their WSL ``/mnt/<drive>/…`` equivalents before
+        being passed to flow.
 
     Returns
     -------
     list[str]
         The command and arguments ready for :class:`QProcess`.
     """
-    flow_args: list[str] = [run.case_path, f"--output-dir={run.output_dir}"]
+    if use_wsl:
+        case_path = windows_path_to_wsl(run.case_path)
+        output_dir = windows_path_to_wsl(run.output_dir)
+        # Binary paths may also be Windows-style (e.g. set via Browse button)
+        flow_binary = windows_path_to_wsl(flow_binary)
+        mpirun_binary = windows_path_to_wsl(mpirun_binary)
+    else:
+        case_path = run.case_path
+        output_dir = run.output_dir
+
+    flow_args: list[str] = [case_path, f"--output-dir={output_dir}"]
 
     for key, value in run.flow_options.items():
         flow_args.append(f"--{key}={value}")
 
     if run.mpi_processes > 1:
-        return [
-            mpirun_binary,
-            "-np",
-            str(run.mpi_processes),
-            flow_binary,
-            *flow_args,
-        ]
+        inner = [mpirun_binary, "-np", str(run.mpi_processes), flow_binary, *flow_args]
+        if use_wsl:
+            return ["wsl", *inner]
+        return inner
+
+    if use_wsl:
+        return ["wsl", flow_binary, *flow_args]
 
     return [flow_binary, *flow_args]
 
@@ -244,11 +269,13 @@ class SimulationRunner(QObject):
         self,
         flow_binary: str = "flow",
         mpirun_binary: str = "mpirun",
+        use_wsl: bool = False,
         parent: QObject | None = None,
     ) -> None:
         super().__init__(parent)
         self._flow_binary = flow_binary
         self._mpirun_binary = mpirun_binary
+        self._use_wsl = use_wsl
         self._processes: dict[str, QProcess] = {}
         self._total_time: dict[str, float] = {}
         self._total_steps: dict[str, int] = {}
@@ -263,7 +290,9 @@ class SimulationRunner(QObject):
         if run.run_id in self._processes:
             return False
 
-        cmd = build_flow_command(run, self._flow_binary, self._mpirun_binary)
+        cmd = build_flow_command(
+            run, self._flow_binary, self._mpirun_binary, self._use_wsl
+        )
         program = cmd[0]
         arguments = cmd[1:]
 
