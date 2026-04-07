@@ -537,7 +537,7 @@ class MainWindow(QMainWindow):
                 if pid is not None:
                     try:
                         alive = psutil.pid_exists(int(pid))
-                    except Exception:
+                    except (TypeError, ValueError, OSError):
                         pass
                 if not alive:
                     run.status = RunStatus.INCOMPLETE
@@ -551,7 +551,6 @@ class MainWindow(QMainWindow):
         worker.finished.connect(worker.deleteLater)
         worker.finished.connect(thread.quit)
         thread.finished.connect(thread.deleteLater)
-        thread.finished.connect(lambda t=thread: self._bg_threads.remove(t) if t in self._bg_threads else None)
         self._bg_threads.append(thread)
         thread.start()
 
