@@ -386,6 +386,14 @@ class RunsPanel(QWidget):
         self._btn_new_run.setEnabled(case is not None)
         self.refresh()
 
+    def has_case(self) -> bool:
+        """Return True when a case is currently loaded."""
+        return self._current_case is not None
+
+    def set_simulation_buttons_enabled(self, enabled: bool) -> None:
+        """Enable or disable the simulation action buttons (e.g. New Run)."""
+        self._btn_new_run.setEnabled(enabled)
+
     def refresh(self) -> None:
         """Rebuild the run list from the current case."""
         self._list.clear()

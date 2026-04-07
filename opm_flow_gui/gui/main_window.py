@@ -111,6 +111,7 @@ class MainWindow(QMainWindow):
 
         # --- Signal connections ----------------------------------------------
         self._case_panel.case_selected.connect(self._on_case_selected)
+        self._case_panel.multi_selection_active.connect(self._on_cases_multi_selection_active)
         self._runs_panel.run_selected.connect(self._on_run_selected)
         self._runs_panel.runs_multi_selected.connect(self._on_runs_multi_selected)
         self._runs_panel.new_run_requested.connect(self._on_new_run)
@@ -179,6 +180,19 @@ class MainWindow(QMainWindow):
         self._summary_panel.set_run(None)
         if case is not None:
             self.statusBar().showMessage(f"Case: {case.name}")
+
+    def _on_cases_multi_selection_active(self, active: bool) -> None:
+        """Disable the New Run button while multiple cases are selected."""
+        if active:
+            self._runs_panel.set_simulation_buttons_enabled(False)
+            self.statusBar().showMessage(
+                "Multiple cases selected – use Remove to bulk-delete"
+            )
+        else:
+            # Re-enable based on whether a single case is still loaded
+            self._runs_panel.set_simulation_buttons_enabled(
+                self._runs_panel.has_case()
+            )
 
     def _on_run_selected(self, run_id: str) -> None:
         self._current_run_id = run_id

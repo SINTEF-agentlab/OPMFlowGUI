@@ -8,10 +8,9 @@ directory in the system file manager.
 
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QByteArray, QUrl, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QMouseEvent, QPixmap, QResizeEvent
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -31,24 +30,15 @@ from opm_flow_gui.core.case_manager import Case, CaseManager
 import opm_flow_gui.gui.styles as _styles
 
 # ---------------------------------------------------------------------------
-# OPM compact logo – 28 × 28 px PNG with transparent background, embedded as
-# base64 so the package ships without any separate asset file.
+# Placeholder logo loaded from the assets directory.
 # ---------------------------------------------------------------------------
-_OPM_LOGO_B64 = (
-    "iVBORw0KGgoAAAANSUhEUgAAABwAAAAcCAYAAAByDd+UAAAA6klEQVR4nM2WTRLCMAiFseMR"
-    "6g08mi7qgXRRj+YN2kO4SiZSfh6Vib5dG8hXCCUQddYhYjxe7i/p/fq8ndOAGkSTBx8yYYiP"
-    "GOEekCQp2g3Qgi3ztErvT9fHiEKP9jfaIL5ugYs+IpSia2Hahp5NG2Utmr0wviZlo91brVIU"
-    "hkJdYAQWsR2ItumMFIEG5VEWBlSlXMs8tYCQr5tSCyY9pwO/1f8D+ZlFz7B2mqxK1fxKt3Ej"
-    "9Ppo1FYFop1DsrGyUoHS3YVCI80bug/RtHowIrDTaO3KAmn6/YiRAbYmN/O3iMybqE/3Qbi7"
-    "3qxcmQXOfEYQAAAAAElFTkSuQmCC"
-)
+_ASSETS_DIR = Path(__file__).parent.parent / "assets"
+_LOGO_PATH = _ASSETS_DIR / "logo_placeholder.png"
 
 
-def _opm_logo_pixmap(height: int = 20) -> QPixmap:
-    """Return a QPixmap of the OPM logo scaled to *height* pixels."""
-    raw = QByteArray(base64.b64decode(_OPM_LOGO_B64))
-    pixmap = QPixmap()
-    pixmap.loadFromData(raw, "PNG")
+def _logo_pixmap(height: int = 24) -> QPixmap:
+    """Return a QPixmap of the logo scaled to *height* pixels, or null if not found."""
+    pixmap = QPixmap(str(_LOGO_PATH))
     if not pixmap.isNull():
         pixmap = pixmap.scaledToHeight(height, Qt.TransformationMode.SmoothTransformation)
     return pixmap
@@ -176,7 +166,7 @@ class _CaseItemWidget(QWidget):
 
         # ---- assemble ----
         row = QHBoxLayout(self)
-        row.setContentsMargins(8, 10, 8, 10)
+        row.setContentsMargins(8, 10, 8, 14)
         row.setSpacing(8)
         if self._badge is not None:
             row.addWidget(
@@ -196,6 +186,7 @@ class CasePanel(QWidget):
     COLLAPSED_WIDTH: int = 32
 
     case_selected = Signal(str)
+    multi_selection_active = Signal(bool)  # True when >1 cases are selected
     expand_requested = Signal()  # emitted when the collapsed header is clicked
 
     def __init__(
@@ -242,10 +233,10 @@ class CasePanel(QWidget):
         header_layout.setSpacing(8)
 
         self._logo_label = QLabel()
-        pixmap = _opm_logo_pixmap(20)
+        pixmap = _logo_pixmap(24)
         if not pixmap.isNull():
             self._logo_label.setPixmap(pixmap)
-        self._logo_label.setFixedSize(24, 24)
+        self._logo_label.setFixedSize(72, 24)
         self._logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._logo_label.setStyleSheet("background: transparent;")
         header_layout.addWidget(self._logo_label)
@@ -324,7 +315,7 @@ class CasePanel(QWidget):
 
         # --- case list ---
         self._list = QListWidget()
-        self._list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self._list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
         self._list.setStyleSheet(
             f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; }}"
@@ -420,7 +411,7 @@ class CasePanel(QWidget):
         self._btn_add.clicked.connect(self._add_case_file)
         self._btn_scan.clicked.connect(self._scan_folder)
         self._btn_remove.clicked.connect(self._remove_selected)
-        self._list.currentItemChanged.connect(self._on_selection_changed)
+        self._list.itemSelectionChanged.connect(self._on_selection_changed)
         self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._filter_edit.textChanged.connect(self._filter_cases)
         self._filter_mode_btn.toggled.connect(self._on_filter_mode_toggled)
@@ -485,20 +476,26 @@ class CasePanel(QWidget):
             self.refresh()
 
     def _remove_selected(self) -> None:
-        """Remove the currently selected case from the manager and list."""
-        item = self._list.currentItem()
-        if item is None:
+        """Remove all currently selected cases from the manager and list."""
+        selected_items = self._list.selectedItems()
+        if not selected_items:
             return
-        data_path: str = item.data(Qt.ItemDataRole.UserRole)
-        self._case_manager.remove_case(data_path)
+        paths = [item.data(Qt.ItemDataRole.UserRole) for item in selected_items]
+        for data_path in paths:
+            self._case_manager.remove_case(data_path)
         self.refresh()
 
     def _on_selection_changed(self) -> None:
-        """Emit *case_selected* with the data-file path of the new selection."""
-        item = self._list.currentItem()
-        if item is not None:
-            data_path: str = item.data(Qt.ItemDataRole.UserRole)
+        """Emit *case_selected* for a single selection or *multi_selection_active* for multiple."""
+        selected = self._list.selectedItems()
+        if len(selected) == 1:
+            self.multi_selection_active.emit(False)
+            data_path: str = selected[0].data(Qt.ItemDataRole.UserRole)
             self.case_selected.emit(data_path)
+        elif len(selected) > 1:
+            self.multi_selection_active.emit(True)
+        else:
+            self.multi_selection_active.emit(False)
 
     def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
         """Open the case's directory in the system file manager."""
