@@ -38,18 +38,7 @@ from PySide6.QtWidgets import (
 if TYPE_CHECKING:
     from opm_flow_gui.core.case_manager import SimulationRun
 
-from opm_flow_gui.gui.styles import (
-    ACCENT,
-    BG_PRIMARY,
-    BG_SECONDARY,
-    BG_TERTIARY,
-    BORDER,
-    ERROR,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-    WARNING,
-)
+import opm_flow_gui.gui.styles as _styles
 
 logger = logging.getLogger(__name__)
 
@@ -109,14 +98,14 @@ class _LogHighlighter(QSyntaxHighlighter):
         self._search_text: str = ""
 
         self._fmt_header = QTextCharFormat()
-        self._fmt_header.setForeground(QColor(ACCENT))
+        self._fmt_header.setForeground(QColor(_styles.ACCENT))
         self._fmt_header.setFontWeight(700)
 
         self._fmt_warning = QTextCharFormat()
-        self._fmt_warning.setForeground(QColor(WARNING))
+        self._fmt_warning.setForeground(QColor(_styles.WARNING))
 
         self._fmt_error = QTextCharFormat()
-        self._fmt_error.setForeground(QColor(ERROR))
+        self._fmt_error.setForeground(QColor(_styles.ERROR))
 
         self._fmt_search = QTextCharFormat()
         self._fmt_search.setBackground(QColor("#f59e0b"))
@@ -124,9 +113,9 @@ class _LogHighlighter(QSyntaxHighlighter):
 
     def update_colors(self) -> None:
         """Refresh highlight colours from the current active theme constants."""
-        self._fmt_header.setForeground(QColor(ACCENT))
-        self._fmt_warning.setForeground(QColor(WARNING))
-        self._fmt_error.setForeground(QColor(ERROR))
+        self._fmt_header.setForeground(QColor(_styles.ACCENT))
+        self._fmt_warning.setForeground(QColor(_styles.WARNING))
+        self._fmt_error.setForeground(QColor(_styles.ERROR))
         self.rehighlight()
 
     def set_search(self, text: str) -> None:
@@ -247,13 +236,13 @@ class LogViewerPanel(QWidget):
 
         # --- toolbar ---
         self._toolbar = QWidget()
-        self._toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
+        self._toolbar.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
         tb = QHBoxLayout(self._toolbar)
         tb.setContentsMargins(8, 6, 8, 6)
         tb.setSpacing(8)
 
         self._file_label = QLabel("File:")
-        self._file_label.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+        self._file_label.setStyleSheet(f"color: {_styles.TEXT_SECONDARY}; background: transparent;")
         tb.addWidget(self._file_label)
 
         self._file_combo = QComboBox()
@@ -268,9 +257,9 @@ class LogViewerPanel(QWidget):
         self._search_edit.setClearButtonEnabled(True)
         self._search_edit.setMinimumWidth(180)
         self._search_edit.setStyleSheet(
-            f"QLineEdit {{ padding: 4px 8px; border: 1px solid {BORDER};"
-            f" border-radius: 4px; background-color: {BG_TERTIARY};"
-            f" color: {TEXT_PRIMARY}; }}"
+            f"QLineEdit {{ padding: 4px 8px; border: 1px solid {_styles.BORDER};"
+            f" border-radius: 4px; background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
         )
         tb.addWidget(self._search_edit)
 
@@ -282,7 +271,7 @@ class LogViewerPanel(QWidget):
         tb.addWidget(self._btn_next)
 
         self._match_label = QLabel("")
-        self._match_label.setStyleSheet(f"color: {TEXT_MUTED}; background: transparent; font-size: 11px;")
+        self._match_label.setStyleSheet(f"color: {_styles.TEXT_MUTED}; background: transparent; font-size: 11px;")
         tb.addWidget(self._match_label)
 
         tb.addStretch()
@@ -305,32 +294,35 @@ class LogViewerPanel(QWidget):
 
         steps_header = QLabel("Report Steps")
         steps_header.setStyleSheet(
-            f"font-size: 12px; font-weight: bold; color: {TEXT_PRIMARY};"
-            f" padding: 6px 8px; background-color: {BG_SECONDARY};"
+            f"font-size: 12px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
+            f" padding: 6px 8px; background-color: {_styles.BG_SECONDARY};"
         )
         step_layout.addWidget(steps_header)
 
         self._step_list = QListWidget()
         self._step_list.setStyleSheet(
-            f"QListWidget {{ background-color: {BG_SECONDARY}; border: none;"
+            f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; font-size: 11px; }}"
             f" QListWidget::item {{ padding: 4px 8px;"
-            f" border-bottom: 1px solid {BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {BG_TERTIARY}; }}"
-            f" QListWidget::item:hover {{ background-color: {BG_TERTIARY}; }}"
+            f" border-bottom: 1px solid {_styles.BORDER}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         step_layout.addWidget(self._step_list, 1)
         main_splitter.addWidget(step_pane)
 
-        # Right: text view
+        # Right: text view — use an explicit monospace font in the stylesheet so it
+        # takes precedence over the application-wide QSS font-family rule.
+        _mono = _monospace_font()
         self._text_view = QPlainTextEdit()
         self._text_view.setReadOnly(True)
         self._text_view.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self._text_view.setFont(_monospace_font())
+        self._text_view.setFont(_mono)
         self._text_view.setStyleSheet(
-            f"QPlainTextEdit {{ background-color: {BG_PRIMARY};"
-            f" color: {TEXT_PRIMARY}; border: none;"
-            f" selection-background-color: {ACCENT}; }}"
+            f"QPlainTextEdit {{ background-color: {_styles.BG_PRIMARY};"
+            f" color: {_styles.TEXT_PRIMARY}; border: none;"
+            f" selection-background-color: {_styles.ACCENT};"
+            f" font-family: '{_mono.family()}'; font-size: {_mono.pointSize()}pt; }}"
         )
         self._highlighter = _LogHighlighter(self._text_view.document())
         main_splitter.addWidget(self._text_view)
@@ -351,19 +343,19 @@ class LogViewerPanel(QWidget):
 
         warn_header = QLabel("Warnings & Notices")
         warn_header.setStyleSheet(
-            f"font-size: 12px; font-weight: bold; color: {WARNING};"
-            f" padding: 4px 8px; background-color: {BG_SECONDARY};"
+            f"font-size: 12px; font-weight: bold; color: {_styles.WARNING};"
+            f" padding: 4px 8px; background-color: {_styles.BG_SECONDARY};"
         )
         warn_layout.addWidget(warn_header)
 
         self._warn_list = QListWidget()
         self._warn_list.setStyleSheet(
-            f"QListWidget {{ background-color: {BG_SECONDARY}; border: none;"
+            f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; font-size: 11px; }}"
             f" QListWidget::item {{ padding: 3px 8px;"
-            f" border-bottom: 1px solid {BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {BG_TERTIARY}; }}"
-            f" QListWidget::item:hover {{ background-color: {BG_TERTIARY}; }}"
+            f" border-bottom: 1px solid {_styles.BORDER}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         warn_layout.addWidget(self._warn_list, 1)
         bottom_splitter.addWidget(warn_pane)
@@ -378,7 +370,7 @@ class LogViewerPanel(QWidget):
         self._empty_label = QLabel("Select a run to view log files")
         self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 14px; background: transparent;"
+            f"color: {_styles.TEXT_MUTED}; font-size: 14px; background: transparent;"
         )
         root.addWidget(self._empty_label, 1)
 
@@ -394,10 +386,10 @@ class LogViewerPanel(QWidget):
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setStyleSheet(
             f"QPushButton {{ padding: 4px 10px; border-radius: 4px;"
-            f" background-color: {BG_TERTIARY}; color: {TEXT_SECONDARY};"
-            f" border: 1px solid {BORDER}; font-size: 12px; }}"
-            f" QPushButton:hover {{ background-color: {ACCENT};"
-            f" color: {TEXT_PRIMARY}; }}"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_SECONDARY};"
+            f" border: 1px solid {_styles.BORDER}; font-size: 12px; }}"
+            f" QPushButton:hover {{ background-color: {_styles.ACCENT};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
         )
         return btn
 
@@ -408,10 +400,10 @@ class LogViewerPanel(QWidget):
         btn.setFixedWidth(26)
         btn.setStyleSheet(
             f"QPushButton {{ padding: 2px 4px; border-radius: 4px;"
-            f" background-color: {BG_TERTIARY}; color: {TEXT_SECONDARY};"
-            f" border: 1px solid {BORDER}; font-size: 12px; }}"
-            f" QPushButton:hover {{ background-color: {ACCENT};"
-            f" color: {TEXT_PRIMARY}; }}"
+            f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_SECONDARY};"
+            f" border: 1px solid {_styles.BORDER}; font-size: 12px; }}"
+            f" QPushButton:hover {{ background-color: {_styles.ACCENT};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
         )
         return btn
 
@@ -435,47 +427,50 @@ class LogViewerPanel(QWidget):
 
     def refresh_styles(self) -> None:
         """Re-apply inline stylesheets using the current active theme colours."""
-        self._toolbar.setStyleSheet(f"background-color: {BG_SECONDARY};")
-        self._file_label.setStyleSheet(f"color: {TEXT_SECONDARY}; background: transparent;")
+        self._toolbar.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+        self._file_label.setStyleSheet(f"color: {_styles.TEXT_SECONDARY}; background: transparent;")
         self._search_edit.setStyleSheet(
-            f"QLineEdit {{ padding: 4px 8px; border: 1px solid {BORDER};"
-            f" border-radius: 4px; background-color: {BG_TERTIARY};"
-            f" color: {TEXT_PRIMARY}; }}"
+            f"QLineEdit {{ padding: 4px 8px; border: 1px solid {_styles.BORDER};"
+            f" border-radius: 4px; background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.TEXT_PRIMARY}; }}"
         )
         self._match_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; background: transparent; font-size: 11px;"
+            f"color: {_styles.TEXT_MUTED}; background: transparent; font-size: 11px;"
         )
         for btn in (self._btn_prev, self._btn_next, self._btn_reload):
             btn.setStyleSheet(
                 f"QPushButton {{ padding: 4px 10px; border-radius: 4px;"
-                f" background-color: {BG_TERTIARY}; color: {TEXT_SECONDARY};"
-                f" border: 1px solid {BORDER}; font-size: 12px; }}"
-                f" QPushButton:hover {{ background-color: {ACCENT};"
-                f" color: {TEXT_PRIMARY}; }}"
+                f" background-color: {_styles.BG_TERTIARY}; color: {_styles.TEXT_SECONDARY};"
+                f" border: 1px solid {_styles.BORDER}; font-size: 12px; }}"
+                f" QPushButton:hover {{ background-color: {_styles.ACCENT};"
+                f" color: {_styles.TEXT_PRIMARY}; }}"
             )
         self._step_list.setStyleSheet(
-            f"QListWidget {{ background-color: {BG_SECONDARY}; border: none;"
+            f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; font-size: 11px; }}"
             f" QListWidget::item {{ padding: 4px 8px;"
-            f" border-bottom: 1px solid {BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {BG_TERTIARY}; }}"
-            f" QListWidget::item:hover {{ background-color: {BG_TERTIARY}; }}"
+            f" border-bottom: 1px solid {_styles.BORDER}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
+        _mono = _monospace_font()
+        self._text_view.setFont(_mono)
         self._text_view.setStyleSheet(
-            f"QPlainTextEdit {{ background-color: {BG_PRIMARY};"
-            f" color: {TEXT_PRIMARY}; border: none;"
-            f" selection-background-color: {ACCENT}; }}"
+            f"QPlainTextEdit {{ background-color: {_styles.BG_PRIMARY};"
+            f" color: {_styles.TEXT_PRIMARY}; border: none;"
+            f" selection-background-color: {_styles.ACCENT};"
+            f" font-family: '{_mono.family()}'; font-size: {_mono.pointSize()}pt; }}"
         )
         self._warn_list.setStyleSheet(
-            f"QListWidget {{ background-color: {BG_SECONDARY}; border: none;"
+            f"QListWidget {{ background-color: {_styles.BG_SECONDARY}; border: none;"
             f" outline: none; font-size: 11px; }}"
             f" QListWidget::item {{ padding: 3px 8px;"
-            f" border-bottom: 1px solid {BORDER}; }}"
-            f" QListWidget::item:selected {{ background-color: {BG_TERTIARY}; }}"
-            f" QListWidget::item:hover {{ background-color: {BG_TERTIARY}; }}"
+            f" border-bottom: 1px solid {_styles.BORDER}; }}"
+            f" QListWidget::item:selected {{ background-color: {_styles.BG_TERTIARY}; }}"
+            f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
         self._empty_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 14px; background: transparent;"
+            f"color: {_styles.TEXT_MUTED}; font-size: 14px; background: transparent;"
         )
         self._highlighter.update_colors()
 
@@ -640,14 +635,14 @@ class LogViewerPanel(QWidget):
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, entry.line_number - 1)
             if entry.kind.lower() in ("error", "***"):
-                item.setForeground(QColor(ERROR))
+                item.setForeground(QColor(_styles.ERROR))
             else:
-                item.setForeground(QColor(WARNING))
+                item.setForeground(QColor(_styles.WARNING))
             self._warn_list.addItem(item)
 
         if not self._warnings:
             item = QListWidgetItem("No warnings or errors detected")
-            item.setForeground(QColor(TEXT_MUTED))
+            item.setForeground(QColor(_styles.TEXT_MUTED))
             item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
             self._warn_list.addItem(item)
 
@@ -716,7 +711,7 @@ def _separator() -> QWidget:
     sep = QWidget()
     sep.setFixedWidth(1)
     sep.setFixedHeight(20)
-    sep.setStyleSheet(f"background-color: {BORDER};")
+    sep.setStyleSheet(f"background-color: {_styles.BORDER};")
     return sep
 
 

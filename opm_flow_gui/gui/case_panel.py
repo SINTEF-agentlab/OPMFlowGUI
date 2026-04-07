@@ -11,8 +11,8 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QByteArray, QEvent, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QEnterEvent, QMouseEvent, QPixmap, QResizeEvent
+from PySide6.QtCore import Qt, QByteArray, QUrl, Signal
+from PySide6.QtGui import QDesktopServices, QMouseEvent, QPixmap, QResizeEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -75,8 +75,6 @@ class _CollapsedBar(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Click to expand the Cases panel")
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -84,27 +82,30 @@ class _CollapsedBar(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self._arrow = QLabel("▶")
-        self._arrow.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._arrow.setStyleSheet(
-            f"color: {_styles.ACCENT}; font-size: 14px; background: transparent;"
+        self._btn = QPushButton("▶")
+        self._btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn.setToolTip("Click to expand the Cases panel")
+        self._btn.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding,
         )
-
-        layout.addStretch()
-        layout.addWidget(self._arrow)
-        layout.addStretch()
-
-        self.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
+        self._btn.setStyleSheet(
+            f"QPushButton {{ background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.ACCENT}; border: none;"
+            f" border-right: 3px solid {_styles.ACCENT};"
+            f" border-radius: 0; font-size: 16px; font-weight: bold; }}"
+            f" QPushButton:hover {{ background-color: {_styles.ACCENT}; color: #ffffff; }}"
+        )
+        self._btn.clicked.connect(self.clicked)
+        layout.addWidget(self._btn)
 
     def refresh_styles(self) -> None:
-        self._arrow.setStyleSheet(
-            f"color: {_styles.ACCENT}; font-size: 14px; background: transparent;"
+        self._btn.setStyleSheet(
+            f"QPushButton {{ background-color: {_styles.BG_TERTIARY};"
+            f" color: {_styles.ACCENT}; border: none;"
+            f" border-right: 3px solid {_styles.ACCENT};"
+            f" border-radius: 0; font-size: 16px; font-weight: bold; }}"
+            f" QPushButton:hover {{ background-color: {_styles.ACCENT}; color: #ffffff; }}"
         )
-        self.setStyleSheet(f"background-color: {_styles.BG_SECONDARY};")
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
-        super().mousePressEvent(event)
-        self.clicked.emit()
 
 
 class _ElidingLabel(QLabel):
@@ -136,17 +137,34 @@ class _CaseItemWidget(QWidget):
     def __init__(self, case: Case, parent: QWidget | None = None) -> None:
         super().__init__(parent)
 
-        # ---- left column: name + path ----
-        left = QVBoxLayout()
-        left.setContentsMargins(0, 0, 0, 0)
-        left.setSpacing(2)
+        run_count = len(case.runs)
+
+        # ---- left column: run-count badge (only when at least one run) ----
+        # Placed first so it appears at the far-left edge and is always visible.
+        self._badge: QLabel | None = None
+        if run_count > 0:
+            badge_text = f"{run_count}"
+            badge = QLabel(badge_text)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setStyleSheet(
+                f"background-color: {_styles.ACCENT}; color: {_styles.TEXT_PRIMARY};"
+                " border-radius: 8px; font-size: 11px; font-weight: bold;"
+                " padding: 2px 6px; min-width: 18px;"
+            )
+            badge.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            self._badge = badge
+
+        # ---- right column: name + path ----
+        right = QVBoxLayout()
+        right.setContentsMargins(0, 0, 0, 0)
+        right.setSpacing(4)
 
         name_label = QLabel(case.name)
         name_label.setStyleSheet(
             f"font-weight: bold; font-size: 13px; color: {_styles.TEXT_PRIMARY};"
             " background: transparent;"
         )
-        left.addWidget(name_label)
+        right.addWidget(name_label)
 
         path_label = _ElidingLabel(case.directory)
         path_label.setStyleSheet(
@@ -154,47 +172,21 @@ class _CaseItemWidget(QWidget):
         )
         path_label.setToolTip(case.directory)
         path_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        left.addWidget(path_label)
-
-        # ---- right column: run-count badge (only when at least one run) ----
-        run_count = len(case.runs)
-        self._badge: QLabel | None = None
-        if run_count > 0:
-            badge_text = f"{run_count} run{'s' if run_count != 1 else ''}"
-            badge = QLabel(badge_text)
-            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            badge.setStyleSheet(
-                f"background-color: {_styles.ACCENT}; color: {_styles.TEXT_PRIMARY};"
-                " border-radius: 8px; font-size: 11px; font-weight: bold;"
-                " padding: 2px 8px;"
-            )
-            badge.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            self._badge = badge
+        right.addWidget(path_label)
 
         # ---- assemble ----
         row = QHBoxLayout(self)
-        row.setContentsMargins(8, 6, 8, 6)
-        row.addLayout(left, 1)
+        row.setContentsMargins(8, 8, 8, 8)
+        row.setSpacing(8)
         if self._badge is not None:
             row.addWidget(
                 self._badge,
                 0,
-                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter,
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
             )
+        row.addLayout(right, 1)
 
         self.setStyleSheet("background: transparent;")
-
-    # Hide the run-count badge while the mouse is over the row so it does
-    # not obscure the case name / path text.
-    def enterEvent(self, event: QEnterEvent) -> None:  # noqa: N802
-        if self._badge is not None:
-            self._badge.setVisible(False)
-        super().enterEvent(event)
-
-    def leaveEvent(self, event: QEvent) -> None:  # noqa: N802
-        if self._badge is not None:
-            self._badge.setVisible(True)
-        super().leaveEvent(event)
 
 
 class CasePanel(QWidget):
@@ -262,8 +254,8 @@ class CasePanel(QWidget):
         self._header.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
             f" background-color: {_styles.BG_SECONDARY};"
-            " cursor: pointer;"
         )
+        self._header.setCursor(Qt.CursorShape.PointingHandCursor)
         self._header.setAccessibleDescription(
             "Cases panel header – click to expand the panel when it is collapsed"
         )
@@ -360,7 +352,6 @@ class CasePanel(QWidget):
         self._header.setStyleSheet(
             f"font-size: 16px; font-weight: bold; color: {_styles.TEXT_PRIMARY};"
             f" background-color: {_styles.BG_SECONDARY};"
-            " cursor: pointer;"
         )
         self._filter_edit.setStyleSheet(
             f"QLineEdit {{ margin: 6px 8px; padding: 6px 10px;"
