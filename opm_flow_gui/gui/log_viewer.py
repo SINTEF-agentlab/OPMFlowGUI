@@ -683,7 +683,8 @@ class LogViewerPanel(QWidget):
         self._warnings = warnings
 
         prefix = (
-            "— File truncated: showing last 2 MB. Use an external viewer for the full log. —\n\n"
+            f"— File truncated: showing last {_MAX_DISPLAY_CHARS // (1024 * 1024)} MB."
+            " Use an external viewer for the full log. —\n\n"
             if truncated
             else ""
         )
