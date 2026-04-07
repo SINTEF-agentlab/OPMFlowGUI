@@ -20,6 +20,7 @@ class RunStatus(Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     CANCELLED = "cancelled"
+    INCOMPLETE = "incomplete"
 
 
 @dataclass

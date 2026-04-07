@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QInputDialog,
@@ -376,6 +377,7 @@ class RunsPanel(QWidget):
     # ------------------------------------------------------------------
     def _connect_signals(self) -> None:
         self._list.itemSelectionChanged.connect(self._on_selection_changed)
+        self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._btn_new_run.clicked.connect(self.new_run_requested.emit)
 
     # ------------------------------------------------------------------
@@ -508,6 +510,18 @@ class RunsPanel(QWidget):
     def _on_stop_clicked(self, run_id: str) -> None:
         """Forward stop request to the main window."""
         self.run_stop_requested.emit(run_id)
+
+    def _on_item_double_clicked(self, item: QListWidgetItem) -> None:
+        """Open the output directory of the double-clicked run in the system file explorer."""
+        if self._current_case is None:
+            return
+        run_id = item.data(Qt.ItemDataRole.UserRole)
+        if run_id is None:
+            return
+        run = self._current_case.get_run(run_id)
+        if run is None or not run.output_dir:
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(run.output_dir))
 
     # ------------------------------------------------------------------
     # Widget factory

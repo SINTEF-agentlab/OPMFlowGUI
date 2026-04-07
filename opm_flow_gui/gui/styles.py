@@ -839,6 +839,7 @@ _STATUS_COLOURS: dict[str, str] = {
     "FAILED": ERROR,
     "CANCELLED": WARNING,
     "PENDING": TEXT_MUTED,
+    "INCOMPLETE": WARNING,
 }
 
 
@@ -934,6 +935,7 @@ def apply_theme(app: QApplication, theme_name: str) -> None:
         "FAILED": colors.error,
         "CANCELLED": colors.warning,
         "PENDING": colors.text_muted,
+        "INCOMPLETE": colors.warning,
     }
 
     if sys.platform == "darwin":
