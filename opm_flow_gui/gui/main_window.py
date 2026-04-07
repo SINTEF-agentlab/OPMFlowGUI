@@ -61,6 +61,7 @@ class MainWindow(QMainWindow):
         self._sim_runner = SimulationRunner(
             flow_binary=config.flow_binary,
             mpirun_binary=config.mpirun_binary,
+            use_wsl=config.use_wsl,
             parent=self,
         )
 
@@ -241,7 +242,7 @@ class MainWindow(QMainWindow):
             else str(Path(case.directory) / "output")
         )
 
-        flow_opts = get_flow_options(config.flow_binary)
+        flow_opts = get_flow_options(config.flow_binary, use_wsl=config.use_wsl)
         dialog = RunDialog(case.name, output_base, flow_options=flow_opts, parent=self)
         if dialog.exec() != RunDialog.DialogCode.Accepted:
             return
@@ -387,14 +388,17 @@ class MainWindow(QMainWindow):
         self._config_manager._config = new_config
         self._config_manager.save()
 
-        # Update simulation runner binaries
+        # Update simulation runner binaries and WSL flag
         self._sim_runner._flow_binary = new_config.flow_binary
         self._sim_runner._mpirun_binary = new_config.mpirun_binary
+        self._sim_runner._use_wsl = new_config.use_wsl
 
-        # Invalidate cached flow options when the binary path changes
+        # Invalidate cached flow options when the binary path or WSL flag changes
         if new_config.flow_binary != old_flow_binary:
             from opm_flow_gui.core.simulation_runner import _flow_options_cache
-            _flow_options_cache.pop(old_flow_binary, None)
+            keys_to_remove = [k for k in _flow_options_cache if k[0] == old_flow_binary]
+            for k in keys_to_remove:
+                _flow_options_cache.pop(k, None)
 
         # Update ResInsight binary in summary panel
         self._summary_panel.set_resinsight_binary(new_config.resinsight_binary)
