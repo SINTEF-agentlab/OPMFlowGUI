@@ -327,6 +327,7 @@ class CasePanel(QWidget):
             f" color: {_styles.TEXT_PRIMARY}; }}"
             f" QListWidget::item:hover {{ background-color: {_styles.BG_TERTIARY}; }}"
         )
+        content_layout.addWidget(self._list, 1)
 
         self._stacked.addWidget(content_widget)
 
