@@ -38,6 +38,9 @@ _LOGO_PATH = _ASSETS_DIR / "logo_placeholder.png"
 
 def _logo_pixmap(height: int = 24) -> QPixmap:
     """Return a QPixmap of the logo scaled to *height* pixels, or null if not found."""
+    if not _LOGO_PATH.exists():
+        import logging
+        logging.getLogger(__name__).warning("Logo file not found: %s", _LOGO_PATH)
     pixmap = QPixmap(str(_LOGO_PATH))
     if not pixmap.isNull():
         pixmap = pixmap.scaledToHeight(height, Qt.TransformationMode.SmoothTransformation)
@@ -236,6 +239,7 @@ class CasePanel(QWidget):
         pixmap = _logo_pixmap(24)
         if not pixmap.isNull():
             self._logo_label.setPixmap(pixmap)
+        # Fixed display size; the actual asset (300×80 px) is scaled to fit this widget
         self._logo_label.setFixedSize(72, 24)
         self._logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._logo_label.setStyleSheet("background: transparent;")

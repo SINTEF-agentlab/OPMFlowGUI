@@ -13,6 +13,7 @@ import logging
 import psutil
 
 from PySide6.QtCore import QObject, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
@@ -446,7 +447,7 @@ class SystemMonitorPanel(QWidget):
         """Stop the refresh timer (called when the tab is hidden)."""
         self._timer.stop()
 
-    def closeEvent(self, event) -> None:  # noqa: N802
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802
         """Stop the timer and worker thread on close."""
         self._timer.stop()
         self._worker_thread.quit()
