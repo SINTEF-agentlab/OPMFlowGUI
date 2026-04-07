@@ -235,6 +235,7 @@ class SystemMonitorPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._cpu_bars: list[_CpuCoreBar] = []
+        self._started_once: bool = False
         self._setup_ui()
 
         # Background thread for psutil data collection (avoids GUI freezes on Windows)
@@ -244,13 +245,12 @@ class SystemMonitorPanel(QWidget):
         self._worker.data_ready.connect(self._on_data_ready)
         self._worker_thread.start()
 
-        # Timer fires on the GUI thread and triggers the worker via a queued connection
+        # Timer fires on the GUI thread and triggers the worker via a queued connection.
+        # The timer is started lazily by start() so it does not consume resources
+        # while the System Monitor tab is not visible.
         self._timer = QTimer(self)
         self._timer.setInterval(_REFRESH_INTERVAL_MS)
         self._timer.timeout.connect(self._worker.collect)
-        self._timer.start()
-        # Initial populate (queued so the thread is ready)
-        QTimer.singleShot(0, self._worker.collect)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -442,6 +442,10 @@ class SystemMonitorPanel(QWidget):
         """Start the refresh timer (called when the tab becomes visible)."""
         if not self._timer.isActive():
             self._timer.start()
+        if not self._started_once:
+            # Trigger an immediate first collection so the panel is populated right away.
+            self._started_once = True
+            QTimer.singleShot(0, self._worker.collect)
 
     def stop(self) -> None:
         """Stop the refresh timer (called when the tab is hidden)."""

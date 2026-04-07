@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QObject, QThread, Signal, Slot, QTimer
 from PySide6.QtGui import (
     QColor,
     QSyntaxHighlighter,
@@ -41,6 +41,11 @@ if TYPE_CHECKING:
 import opm_flow_gui.gui.styles as _styles
 
 logger = logging.getLogger(__name__)
+
+# Maximum number of characters to load into the text view.  Files larger than
+# this limit are truncated to the *tail* so the most recent output is visible.
+_MAX_DISPLAY_CHARS = 2 * 1024 * 1024  # 2 MB
+
 
 # ---------------------------------------------------------------------------
 # Regex patterns for parsing OPM Flow PRT/DBG files
@@ -197,6 +202,50 @@ def _parse_log(content: str) -> tuple[list[StepInfo], list[WarningEntry]]:
 
 
 # ---------------------------------------------------------------------------
+# Background worker – reads and parses a log file off the GUI thread
+# ---------------------------------------------------------------------------
+
+class _FileLoaderWorker(QObject):
+    """Reads and parses a log file in a background thread.
+
+    For files larger than *_MAX_DISPLAY_CHARS*, only the tail of the file is
+    loaded into the text view to avoid a long ``setPlainText()`` freeze.
+    """
+
+    # Emits (request_id, display_content, truncated, steps, warnings)
+    finished: Signal = Signal(int, str, bool, list, list)
+    # Emits (request_id, error_message)
+    error: Signal = Signal(int, str)
+
+    def __init__(self, request_id: int, path: str) -> None:
+        super().__init__()
+        self._request_id = request_id
+        self._path = path
+
+    @Slot()
+    def run(self) -> None:
+        try:
+            content = Path(self._path).read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            self.error.emit(self._request_id, str(exc))
+            return
+
+        truncated = False
+        display_content = content
+        if len(content) > _MAX_DISPLAY_CHARS:
+            truncated = True
+            # Keep the tail so the most recent log output is visible
+            display_content = content[-_MAX_DISPLAY_CHARS:]
+            # Align to the start of a line to avoid partial lines at the top
+            newline_pos = display_content.find("\n")
+            if newline_pos != -1:
+                display_content = display_content[newline_pos + 1:]
+
+        steps, warnings = _parse_log(content)
+        self.finished.emit(self._request_id, display_content, truncated, steps, warnings)
+
+
+# ---------------------------------------------------------------------------
 # Log viewer panel
 # ---------------------------------------------------------------------------
 
@@ -212,6 +261,8 @@ class LogViewerPanel(QWidget):
         self._steps: list[StepInfo] = []
         self._warnings: list[WarningEntry] = []
         self._content: str = ""
+        self._load_request_id: int = 0   # incremented per load to discard stale results
+        self._pending_scroll: tuple = (False, None, False)
         self._search_timer = QTimer(self)
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
@@ -576,7 +627,7 @@ class LogViewerPanel(QWidget):
             self._load_file(path, preserve_position=True)
 
     def _load_file(self, path: str, preserve_position: bool = False) -> None:
-        # Capture scroll position before loading if requested
+        # Capture scroll position before the async load
         scrollbar = self._text_view.verticalScrollBar()
         if preserve_position:
             saved_pos: int | None = scrollbar.value()
@@ -585,28 +636,67 @@ class LogViewerPanel(QWidget):
             saved_pos = None
             at_bottom = False
 
-        try:
-            content = Path(path).read_text(encoding="utf-8", errors="replace")
-        except OSError as exc:
-            logger.warning("Could not read log file %s: %s", path, exc)
-            self._text_view.setPlainText(f"Error reading file:\n{exc}")
-            return
+        self._pending_scroll = (preserve_position, saved_pos, at_bottom)
 
-        self._content = content
-        self._text_view.setPlainText(content)
+        # Increment the request ID so any result from a previous load is discarded
+        self._load_request_id += 1
+        request_id = self._load_request_id
 
-        self._steps, self._warnings = _parse_log(content)
+        thread = QThread(self)
+        worker = _FileLoaderWorker(request_id, path)
+        worker.moveToThread(thread)
+        thread.started.connect(worker.run)
+        worker.finished.connect(self._on_file_loaded)
+        worker.error.connect(self._on_file_load_error)
+        worker.finished.connect(lambda *_: thread.quit())
+        worker.error.connect(lambda *_: thread.quit())
+        thread.finished.connect(thread.deleteLater)
+        thread.start()
+
+    @Slot(int, str, bool, list, list)
+    def _on_file_loaded(
+        self,
+        request_id: int,
+        display_content: str,
+        truncated: bool,
+        steps: list,
+        warnings: list,
+    ) -> None:
+        """Called on the GUI thread when file reading and parsing finishes."""
+        if request_id != self._load_request_id:
+            return  # superseded by a newer request
+
+        self._content = display_content
+        self._steps = steps
+        self._warnings = warnings
+
+        prefix = (
+            "— File truncated: showing last 2 MB. Use an external viewer for the full log. —\n\n"
+            if truncated
+            else ""
+        )
+        self._text_view.setPlainText(prefix + display_content)
+
         self._populate_steps()
         self._populate_warnings()
         self._apply_search()
 
         # Restore scroll position
+        preserve_position, saved_pos, at_bottom = self._pending_scroll
         if preserve_position:
+            scrollbar = self._text_view.verticalScrollBar()
             if at_bottom:
-                # If we were at the bottom, follow new content
                 scrollbar.setValue(scrollbar.maximum())
             elif saved_pos is not None:
                 scrollbar.setValue(min(saved_pos, scrollbar.maximum()))
+
+    @Slot(int, str)
+    def _on_file_load_error(self, request_id: int, error_msg: str) -> None:
+        """Called on the GUI thread when file reading fails."""
+        if request_id != self._load_request_id:
+            return
+        logger.warning("Could not read log file: %s", error_msg)
+        self._text_view.setPlainText(f"Error reading file:\n{error_msg}")
 
     # ------------------------------------------------------------------
     # Step navigation
