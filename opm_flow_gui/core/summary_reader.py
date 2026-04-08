@@ -25,6 +25,11 @@ _KEY_CATEGORIES: dict[str, str] = {
     "B": "Block",
 }
 
+# File extensions that resdata can use to locate a summary (stripped to base name).
+_SUMMARY_EXTENSIONS: frozenset[str] = frozenset(
+    {".SMSPEC", ".UNSMRY", ".DATA"}
+)
+
 
 @dataclass
 class SummaryData:
@@ -53,9 +58,13 @@ class SummaryReader:
 
     @staticmethod
     def _resolve_path(case_path: str) -> str:
-        """Resolve *case_path* to the extension-free base name that resdata expects."""
+        """Resolve *case_path* to the extension-free base name that resdata expects.
+
+        resdata locates the summary by base name and automatically handles both
+        unified (``.UNSMRY``) and per-step (``.Snnnn``) output formats.
+        """
         p = Path(case_path)
-        if p.suffix.upper() in {".DATA", ".SMSPEC", ".UNSMRY"}:
+        if p.suffix.upper() in _SUMMARY_EXTENSIONS:
             return str(p.with_suffix(""))
         return str(p)
 
@@ -93,7 +102,12 @@ class SummaryReader:
 
         keys: list[str] = sorted(self._summary.keys())
         dates: list[datetime] = list(self._summary.dates)
-        units: dict[str, str] = {k: self._summary.unit(k) for k in keys}
+        units: dict[str, str] = {}
+        for k in keys:
+            try:
+                units[k] = self._summary.unit(k) or ""
+            except Exception:  # noqa: BLE001
+                units[k] = ""
         return SummaryData(keys=keys, dates=dates, units=units)
 
     def get_vector(self, key: str) -> tuple[list[datetime], list[float]] | None:
@@ -104,12 +118,18 @@ class SummaryReader:
 
         Returns:
             A tuple of dates and float values, or ``None`` if the key is
-            not available.
+            not available or the data cannot be read.
         """
         if self._summary is None or not self._summary.has_key(key):
             return None
-        dates: list[datetime] = list(self._summary.dates)
-        values: list[float] = list(self._summary.numpy_vector(key))
+        try:
+            dates: list[datetime] = list(self._summary.dates)
+            values: list[float] = list(self._summary.numpy_vector(key))
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to read vector %s", key)
+            return None
+        if not dates or not values:
+            return None
         return dates, values
 
     def get_vectors(
@@ -139,21 +159,35 @@ class SummaryReader:
         """Extract unique well names from summary keys."""
         if self._summary is None:
             return []
-        return sorted(
-            {self._summary.smspec_node(k).wgname
-             for k in self._summary.keys()
-             if k.startswith("W") and self._summary.smspec_node(k).wgname}
-        )
+        names: set[str] = set()
+        for k in self._summary.keys():
+            if not k.startswith("W"):
+                continue
+            try:
+                node = self._summary.smspec_node(k)
+                wgname = node.wgname if node is not None else None
+                if wgname:
+                    names.add(wgname)
+            except Exception:  # noqa: BLE001
+                pass
+        return sorted(names)
 
     def get_group_names(self) -> list[str]:
         """Extract unique group names from summary keys."""
         if self._summary is None:
             return []
-        return sorted(
-            {self._summary.smspec_node(k).wgname
-             for k in self._summary.keys()
-             if k.startswith("G") and self._summary.smspec_node(k).wgname}
-        )
+        names: set[str] = set()
+        for k in self._summary.keys():
+            if not k.startswith("G"):
+                continue
+            try:
+                node = self._summary.smspec_node(k)
+                wgname = node.wgname if node is not None else None
+                if wgname:
+                    names.add(wgname)
+            except Exception:  # noqa: BLE001
+                pass
+        return sorted(names)
 
     def categorize_keys(self) -> dict[str, list[str]]:
         """Categorize summary keys by their first-letter prefix.
