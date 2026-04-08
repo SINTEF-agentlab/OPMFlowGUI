@@ -45,6 +45,9 @@ import opm_flow_gui.gui.styles as _styles
 logger = logging.getLogger(__name__)
 
 
+# Milliseconds to wait for in-flight loader threads to exit cleanly on shutdown.
+_THREAD_SHUTDOWN_TIMEOUT_MS = 2000
+
 # ---------------------------------------------------------------------------
 # Background worker – loads a SummaryReader off the GUI thread so the panel
 # stays responsive while large UNSMRY files are being parsed.
@@ -119,6 +122,9 @@ class SummaryPanel(QWidget):
         self._plot_colors: list[str] = self._build_plot_palette()
         self._last_selected_key: str | None = None   # persists across run switches
         self._load_request_id: int = 0  # incremented each time a new load is requested
+        # Hold strong Python references to prevent GC of in-flight workers/threads
+        self._active_workers: list[_SummaryLoaderWorker] = []
+        self._active_threads: list[QThread] = []
 
         self._setup_ui()
         self._connect_signals()
@@ -395,6 +401,14 @@ class SummaryPanel(QWidget):
 
         Must be called before the parent window is destroyed.
         """
+        # Invalidate any pending load requests so their results are ignored
+        self._load_request_id += 1
+        # Ask all in-flight loader threads to exit and wait briefly
+        for thread in list(self._active_threads):
+            thread.quit()
+            thread.wait(_THREAD_SHUTDOWN_TIMEOUT_MS)
+        self._active_threads.clear()
+        self._active_workers.clear()
         self._system_monitor.shutdown()
 
     def set_run(self, run: SimulationRun | None) -> None:
@@ -474,12 +488,25 @@ class SummaryPanel(QWidget):
 
     @staticmethod
     def _find_summary_candidates(output_dir: str) -> list[Path]:
-        """Return candidate SMSPEC/DATA files in *output_dir*."""
+        """Return candidate summary base-name files in *output_dir*.
+
+        Priority order:
+        1. ``.SMSPEC`` – present for both unified (``.UNSMRY``) and per-step
+           (``.Snnnn``) formats; resdata resolves the right data file automatically.
+        2. ``.DATA``  – the deck file; resdata can derive the base name from it.
+
+        Only one candidate (highest priority) is returned per unique base name so
+        that a case is not loaded twice when both ``.SMSPEC`` and ``.DATA`` exist.
+        """
         out = Path(output_dir)
-        candidates = list(out.glob("*.SMSPEC")) + list(out.glob("*.DATA"))
-        if not candidates:
-            logger.warning("No SMSPEC/DATA files found in %s", output_dir)
-        return candidates
+        smspec_files = sorted(out.glob("*.SMSPEC"))
+        if smspec_files:
+            return smspec_files
+        data_files = sorted(out.glob("*.DATA"))
+        if data_files:
+            return data_files
+        logger.warning("No SMSPEC/DATA files found in %s", output_dir)
+        return []
 
     def _start_loader(
         self,
@@ -498,7 +525,25 @@ class SummaryPanel(QWidget):
         worker.single_loaded.connect(thread.quit)
         worker.multi_loaded.connect(thread.quit)
         thread.finished.connect(thread.deleteLater)
+        # Keep strong Python references so GC cannot collect the worker or thread
+        # before the background task completes.
+        self._active_workers.append(worker)
+        self._active_threads.append(thread)
+        thread.finished.connect(lambda: self._cleanup_loader(thread, worker))
         thread.start()
+
+    def _cleanup_loader(
+        self, thread: QThread, worker: "_SummaryLoaderWorker"
+    ) -> None:
+        """Remove *thread* and *worker* from the live-reference lists once done."""
+        try:
+            self._active_threads.remove(thread)
+        except ValueError:
+            pass
+        try:
+            self._active_workers.remove(worker)
+        except ValueError:
+            pass
 
     @Slot(int, object)
     def _on_single_loaded(self, request_id: int, reader: object) -> None:
@@ -510,6 +555,8 @@ class SummaryPanel(QWidget):
             self._reader = reader  # type: ignore[assignment]
             self._populate_tree()
             self._restore_key_selection()
+        else:
+            logger.warning("Summary file could not be loaded for the selected run.")
 
     @Slot(int, list, list)
     def _on_multi_loaded(
@@ -528,6 +575,8 @@ class SummaryPanel(QWidget):
             self._reader = first_reader
             self._populate_tree()
             self._restore_key_selection()
+        else:
+            logger.warning("No summary files could be loaded for the selected runs.")
 
     # ------------------------------------------------------------------
     # Tree population
@@ -609,6 +658,7 @@ class SummaryPanel(QWidget):
         unit = info.units.get(key, "") if info else ""
         ylabel = unit if unit else "Value"
 
+        plotted_any = False
         if self._multi_runs:
             # Multi-run overlay: one line per run reader
             readers_and_names = list(zip(self._multi_readers, self._multi_runs))
@@ -619,17 +669,32 @@ class SummaryPanel(QWidget):
                 if vector is None:
                     continue
                 dates, values = vector
+                if not dates:
+                    continue
                 color = self._next_color()
                 label = run.name if run.name else run.run_id[:8]
-                self._axes.plot(dates, values, color=color, linewidth=1.5, label=label)
+                try:
+                    self._axes.plot(dates, values, color=color, linewidth=1.5, label=label)
+                    plotted_any = True
+                except Exception:  # noqa: BLE001
+                    logger.exception("Failed to plot vector %s for run %s", key, label)
         else:
             # Single run
             vector = self._reader.get_vector(key)
             if vector is None:
                 return
             dates, values = vector
+            if not dates:
+                return
             color = self._next_color()
-            self._axes.plot(dates, values, color=color, linewidth=1.5, label=key)
+            try:
+                self._axes.plot(dates, values, color=color, linewidth=1.5, label=key)
+                plotted_any = True
+            except Exception:  # noqa: BLE001
+                logger.exception("Failed to plot vector %s", key)
+
+        if not plotted_any:
+            return
 
         self._plotted_keys.append(key)
 
@@ -644,9 +709,12 @@ class SummaryPanel(QWidget):
             self._axes.set_ylabel("Value", fontsize=11)
 
         self._axes.set_xlabel("Date", fontsize=11)
-        self._axes.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-        self._axes.xaxis.set_major_locator(mdates.AutoDateLocator())
-        self._figure.autofmt_xdate(rotation=30)
+        try:
+            self._axes.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+            self._axes.xaxis.set_major_locator(mdates.AutoDateLocator())
+            self._figure.autofmt_xdate(rotation=30)
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to format date axis for vector %s", key)
 
         if self._legend_visible and self._plotted_keys:
             legend = self._axes.legend(
@@ -658,7 +726,10 @@ class SummaryPanel(QWidget):
             )
             legend.get_frame().set_alpha(0.9)
 
-        self._figure.tight_layout()
+        try:
+            self._figure.tight_layout()
+        except Exception:  # noqa: BLE001
+            pass  # tight_layout can fail with some edge-case data ranges
         self._canvas.draw_idle()
         self._btn_pop_out.setEnabled(True)
 
@@ -716,24 +787,34 @@ class SummaryPanel(QWidget):
 
         if self._reader is not None:
             info = self._reader.get_info()
+            plotted_any = False
             for i, key in enumerate(self._plotted_keys):
                 vector = self._reader.get_vector(key)
                 if vector is None:
                     continue
                 dates, values = vector
+                if not dates:
+                    continue
                 color = self._plot_colors[i % len(self._plot_colors)]
-                ax.plot(dates, values, color=color, linewidth=1.5, label=key)
+                try:
+                    ax.plot(dates, values, color=color, linewidth=1.5, label=key)
+                    plotted_any = True
+                except Exception:  # noqa: BLE001
+                    logger.exception("Failed to plot vector %s in pop-out", key)
 
-            if self._plotted_keys:
+            if plotted_any:
                 ax.set_title(
                     ", ".join(self._plotted_keys), fontsize=13, fontweight="bold"
                 )
                 ax.set_xlabel("Date", fontsize=11)
                 unit = info.units.get(self._plotted_keys[0], "") if info else ""
                 ax.set_ylabel(unit or "Value", fontsize=11)
-                ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-                ax.xaxis.set_major_locator(mdates.AutoDateLocator())
-                fig.autofmt_xdate(rotation=30)
+                try:
+                    ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+                    ax.xaxis.set_major_locator(mdates.AutoDateLocator())
+                    fig.autofmt_xdate(rotation=30)
+                except Exception:  # noqa: BLE001
+                    logger.exception("Failed to format date axis in pop-out")
                 ax.legend(
                     loc="best",
                     fontsize=10,
@@ -741,7 +822,10 @@ class SummaryPanel(QWidget):
                     edgecolor=_styles.BORDER,
                     labelcolor=_styles.TEXT_PRIMARY,
                 )
-                fig.tight_layout()
+                try:
+                    fig.tight_layout()
+                except Exception:  # noqa: BLE001
+                    pass
 
         layout.addWidget(canvas)
         canvas.draw()  # render the themed background before the dialog appears
