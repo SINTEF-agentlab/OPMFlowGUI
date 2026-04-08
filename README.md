@@ -26,17 +26,25 @@ uv run opm_flow_gui/main.py
 
 ### Naming and launching a simulation
 
+The GUI has three main column: The left column contains all cases that have been added. The middle column, once a case has been selected, shows the simulations that have been performed via the GUI. The rightmost column shows the log files, system monitor and summary results. Simulation cases can be named and launched with MPI.
+
 ![Launch simulation 1](assets/runsim1.png)
 
 ### Setting command-line options
+
+All command line options in flow are automatically parsed and made available. Hovering over an option will show the help string.
 
 ![Launch simulation 2](assets/runsim2.png)
 
 ### Inspect the simulation log (DBG/PRT)
 
+The log viewer looks for timesteps, warnings and problems and make them available. During simulation, the log view will automatically update every second.
+
 ![Log viewer](assets/log_viewer.png)
 
 ### Plot summary
+
+One or more summary quantities can be plotted. Multiple cases can be selected to compare responses between two runs of the same model.
 
 ![Log viewer](assets/summary.png)
 
